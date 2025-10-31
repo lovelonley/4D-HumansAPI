@@ -152,14 +152,9 @@ class DependencyChecker:
             from lib.models.smoothnet import SmoothNet
             logger.info("✓ SmoothNet module imported successfully")
             
-            # 3. 尝试加载模型（不加载权重，只检查结构）
+            # 3. 验证检查点文件可读
             try:
                 import torch
-                # 创建模型实例（不加载权重）
-                model = SmoothNet(window_size=9, output_size=24, hidden_size=512, res_hidden_size=256, num_blocks=3, dropout=0.5)
-                logger.info("✓ SmoothNet model structure validated")
-                
-                # 4. 验证检查点文件可读
                 checkpoint = torch.load(checkpoint_path, map_location='cpu')
                 if 'model_pos' not in checkpoint:
                     return False, f"Invalid checkpoint format: 'model_pos' key not found in {checkpoint_path}"
@@ -168,7 +163,7 @@ class DependencyChecker:
                 return True, None
                 
             except Exception as e:
-                return False, f"Failed to validate SmoothNet model: {str(e)}"
+                return False, f"Failed to load SmoothNet checkpoint: {str(e)}"
             
         except ImportError as e:
             error_msg = (
