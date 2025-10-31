@@ -155,9 +155,9 @@ class DependencyChecker:
             # 3. 验证检查点文件可读
             try:
                 import torch
-                checkpoint = torch.load(checkpoint_path, map_location='cpu')
-                if 'model_pos' not in checkpoint:
-                    return False, f"Invalid checkpoint format: 'model_pos' key not found in {checkpoint_path}"
+                checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
+                if 'state_dict' not in checkpoint:
+                    return False, f"Invalid checkpoint format: 'state_dict' key not found in {checkpoint_path}"
                 
                 logger.info("✓ SmoothNet checkpoint validated")
                 return True, None
