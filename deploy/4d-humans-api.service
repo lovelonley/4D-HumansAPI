@@ -1,0 +1,22 @@
+[Unit]
+Description=4D-Humans MoCap API Service
+After=network.target
+
+[Service]
+Type=simple
+User=your-user
+WorkingDirectory=/path/to/4D-Humans
+Environment="PATH=/path/to/conda/envs/4d-humans/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/path/to/conda/envs/4d-humans/bin/python -m api.main
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/4d-humans-api/output.log
+StandardError=append:/var/log/4d-humans-api/error.log
+
+# 资源限制
+LimitNOFILE=65536
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
+

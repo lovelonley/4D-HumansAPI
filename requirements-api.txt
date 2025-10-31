@@ -1,0 +1,27 @@
+# 4D-Humans MoCap API 依赖
+
+# FastAPI 核心
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+
+# Pydantic 配置
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# 异步支持
+aiofiles==23.2.1
+
+# 视频处理
+opencv-python==4.8.1.78
+ffmpeg-python==0.2.0
+
+# 工具库
+python-dotenv==1.0.0
+psutil==5.9.6
+
+# 已在主项目中的依赖（确保版本兼容）
+# torch>=2.0.0
+# numpy>=1.24.0
+# joblib>=1.3.0
+
