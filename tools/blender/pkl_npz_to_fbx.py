@@ -266,8 +266,8 @@ def bake_animation(arm_obj, R_root: np.ndarray, R_body: np.ndarray, camera: np.n
         # Root rotation (convert SMPL -> Blender basis)
         root_pb = pose_bones[UNITY_BONE_NAMES[0]]  # Hips
         Mr_bl = smpl_to_blender_matrix(Mr)
-        # Apply 180deg X flip to root to align up-direction for Unity Humanoid
-        Mr_bl = R_FIX_ROOT @ Mr_bl
+        # Note: R_FIX_ROOT removed - it caused upside-down skeleton in Unity
+        # Mr_bl = R_FIX_ROOT @ Mr_bl
         # Align facing forward (yaw 180) if needed
         Mr_bl = R_FIX_YAW @ Mr_bl
         q_root = mat3_to_quat(Mr_bl)

@@ -161,8 +161,8 @@ def bake_animation_with_smplx(arm_obj, R_root: np.ndarray, R_body: np.ndarray, f
         # Root (pelvis)
         if 'pelvis' in pbones:
             Mr = R_root[f]
-            # apply root-only Rx(pi) flip to match Unity Y-up during FBX conversion
-            Mr = R_FLIP_X @ Mr
+            # Note: R_FLIP_X removed - it caused upside-down skeleton in Unity
+            # Mr = R_FLIP_X @ Mr
             q = mat3_to_quat(Mr)
             pb = pbones['pelvis']
             pb.rotation_quaternion = q
