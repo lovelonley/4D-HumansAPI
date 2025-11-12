@@ -28,10 +28,6 @@ def main():
     data = np.load(args.npz)
     R_root = data['R_root']
     
-    # Coordinate conversions
-    R_CAM_TO_WORLD = np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]], dtype=np.float64)
-    R_SMPL_TO_BLENDER = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]], dtype=np.float64)
-    
     # Clean scene
     for obj in list(bpy.data.objects):
         obj.select_set(True)
@@ -49,14 +45,12 @@ def main():
         elif obj.type == 'MESH':
             bpy.data.objects.remove(obj, do_unlink=True)
     
-    # Apply frame 0 with conversions
-    Mr_camera = R_root[0]
-    Mr_world = R_CAM_TO_WORLD @ Mr_camera @ R_CAM_TO_WORLD.T
-    Mr_blender = R_SMPL_TO_BLENDER @ Mr_world @ R_SMPL_TO_BLENDER.T
+    # Apply NPZ rotation DIRECTLY (no conversion)
+    Mr = R_root[0]
     
-    m = Matrix(((float(Mr_blender[0,0]), float(Mr_blender[0,1]), float(Mr_blender[0,2])),
-                (float(Mr_blender[1,0]), float(Mr_blender[1,1]), float(Mr_blender[1,2])),
-                (float(Mr_blender[2,0]), float(Mr_blender[2,1]), float(Mr_blender[2,2]))))
+    m = Matrix(((float(Mr[0,0]), float(Mr[0,1]), float(Mr[0,2])),
+                (float(Mr[1,0]), float(Mr[1,1]), float(Mr[1,2])),
+                (float(Mr[2,0]), float(Mr[2,1]), float(Mr[2,2]))))
     q = m.to_quaternion()
     
     bpy.context.scene.frame_set(1)
@@ -65,8 +59,18 @@ def main():
     pb.rotation_quaternion = q
     bpy.context.view_layer.update()
     
-    print(f"\n✓ Applied converted rotation to frame 1")
-    print(f"  Open {args.out} in Blender GUI to visually check orientation")
+    print(f"\n[Test 1] Applied NPZ rotation directly (no conversion)")
+    print(f"  Result: Character should be INVERTED")
+    
+    # Now add 180° X-axis rotation to armature object (like PHALP does to mesh)
+    import math
+    arm.rotation_mode = 'XYZ'
+    arm.rotation_euler = (math.radians(180), 0, 0)
+    bpy.context.view_layer.update()
+    
+    print(f"\n[Test 2] Added 180° X-axis rotation to armature object")
+    print(f"  Result: Character should now be UPRIGHT")
+    print(f"  Open {args.out} in Blender GUI to verify")
     
     # Save
     bpy.ops.wm.save_as_mainfile(filepath=args.out)
