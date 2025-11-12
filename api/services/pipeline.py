@@ -392,8 +392,7 @@ class FourDHumansPipeline:
             "--",
             "--npz", smoothed_npz,
             "--out", str(output_fbx),
-            "--fps", str(fps),
-            "--cam-scale", str(cam_scale)
+            "--fps", str(fps)
         ]
         
         if with_root_motion:
