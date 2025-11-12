@@ -45,6 +45,20 @@ def get_pkl_first_frame(pkl_data, tid):
     return None
 
 
+def get_smpl_model_path():
+    """查找 SMPL 模型路径"""
+    import os
+    candidates = [
+        os.path.expanduser('~/.cache/4DHumans/data/smpl'),
+        os.path.expanduser('~/.cache/phalp/3D/models/smpl'),
+        'data/smpl'
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    raise FileNotFoundError(f"SMPL 模型未找到，检查过的路径: {candidates}")
+
+
 def get_key_joints(smpl_params):
     """
     用 SMPL 计算关键点：头(15)、左手(20)、右手(21)、左脚(10)、右脚(11)
@@ -53,7 +67,8 @@ def get_key_joints(smpl_params):
         import torch
         from smplx import SMPL
         
-        smpl = SMPL(model_path='data/smpl', gender='neutral', batch_size=1)
+        model_path = get_smpl_model_path()
+        smpl = SMPL(model_path=model_path, gender='neutral', batch_size=1)
         
         output = smpl(
             global_orient=torch.tensor(smpl_params['global_orient'], dtype=torch.float32),
