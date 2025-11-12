@@ -223,11 +223,13 @@ def bake_animation(
         camera = camera[order]
     frame_idx = frame_idx - frame_idx.min() + 1
     
-    # Fix NPZ inversion: Apply 180° X-axis rotation to armature object (like PHALP does to mesh)
+    # Fix NPZ coordinate system issues:
+    # 1. 180° X-axis rotation: fixes up/down inversion (Y-down → Y-up)
+    # 2. 180° Y-axis rotation: fixes front/back facing (character faces backward in PHALP output)
     arm_obj.rotation_mode = 'XYZ'
-    arm_obj.rotation_euler = (math.radians(180), 0, 0)
+    arm_obj.rotation_euler = (math.radians(180), math.radians(180), 0)
     bpy.context.view_layer.update()
-    print("[fix] Applied 180° X-axis rotation to armature object to fix NPZ inversion")
+    print("[fix] Applied 180° X and Y rotations to fix NPZ coordinate system")
     
     # Set rotation mode for all pose bones
     for b in arm_obj.pose.bones:
