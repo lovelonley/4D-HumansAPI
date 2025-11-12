@@ -324,8 +324,8 @@ class FourDHumansPipeline:
         cmd = [
             sys.executable,
             str(self.smooth_script),
-            "--input", extracted_npz,
-            "--output", str(output_npz),
+            "--npz", extracted_npz,
+            "--out", str(output_npz),
             "--ckpt", str(checkpoint_path),
             "--win", str(smoothing_window),
             "--ema", str(smoothing_ema),
