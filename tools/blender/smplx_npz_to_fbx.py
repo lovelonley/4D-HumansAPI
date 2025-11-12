@@ -223,13 +223,11 @@ def bake_animation(
         camera = camera[order]
     frame_idx = frame_idx - frame_idx.min() + 1
     
-    # Fix NPZ coordinate system issues:
-    # 1. 180° X-axis rotation: fixes up/down inversion (Y-down → Y-up)
-    # 2. 180° Y-axis rotation: fixes front/back facing (character faces backward in PHALP output)
+    # Fix NPZ coordinate system: 180° X-axis rotation to flip Y-down to Y-up
     arm_obj.rotation_mode = 'XYZ'
-    arm_obj.rotation_euler = (math.radians(180), math.radians(180), 0)
+    arm_obj.rotation_euler = (math.radians(180), 0, 0)
     bpy.context.view_layer.update()
-    print("[fix] Applied 180° X and Y rotations to fix NPZ coordinate system")
+    print("[fix] Applied 180° X-axis rotation to fix NPZ Y-down inversion")
     
     # Set rotation mode for all pose bones
     for b in arm_obj.pose.bones:
@@ -246,8 +244,14 @@ def bake_animation(
         if 'pelvis' in pbones:
             Mr = R_root[f]
             
-            # Apply NPZ rotation directly (no conversion needed after object rotation)
-            q = mat3_to_quat(Mr)
+            # Fix facing direction: Apply 180° Y-axis rotation to root pose
+            # PHALP outputs characters facing backward, we need them facing forward
+            R_Y180 = np.array([[-1.0, 0.0, 0.0],
+                               [0.0, 1.0, 0.0],
+                               [0.0, 0.0, -1.0]], dtype=np.float64)
+            Mr_fixed = R_Y180 @ Mr
+            
+            q = mat3_to_quat(Mr_fixed)
             pb = pbones['pelvis']
             pb.rotation_quaternion = q
             pb.keyframe_insert(data_path='rotation_quaternion', frame=frame)
