@@ -290,10 +290,10 @@ def bake_animation(
 
 def export_fbx_for_unity(arm_obj, out_path: str):
     """
-    Export armature to FBX for Unity Humanoid.
+    Export armature to FBX for Unity Humanoid using standard Blender FBX exporter.
     
-    First tries the addon's export operator (if available), then falls back to
-    standard FBX export with Unity-compatible settings.
+    Note: meshcapade_addon does not provide a public FBX export operator,
+    so we use Blender's standard FBX exporter with Unity-compatible settings.
     """
     import bpy
     
@@ -311,26 +311,7 @@ def export_fbx_for_unity(arm_obj, out_path: str):
         if child.type == 'MESH':
             child.select_set(True)
     
-    # Try addon's export operator first (it has Unity presets)
-    try:
-        # Check if operator exists and context is correct
-        if hasattr(bpy.ops.object, 'smplx_export_fbx'):
-            # The operator might need specific context
-            bpy.ops.object.smplx_export_fbx(
-                filepath=out_path,
-                target_format='UNITY'
-            )
-            print(f"[export] Used smplx_export_fbx (Unity format) -> {out_path}")
-            return
-        else:
-            print("[export] smplx_export_fbx not available, using standard FBX export")
-    except RuntimeError as e:
-        # poll() failed - context is incorrect
-        print(f"[export] smplx_export_fbx context error: {e}, using standard FBX export")
-    except Exception as e:
-        print(f"[export] smplx_export_fbx failed: {e}, using standard FBX export")
-    
-    # Fallback: standard FBX export with Unity settings
+    # Standard FBX export with Unity settings
     # Our rotations are in SMPL world space (Y-up)
     # Let FBX exporter convert to Unity coordinate system
     bpy.ops.export_scene.fbx(
