@@ -213,10 +213,14 @@ def bake_animation(
             Mr = R_root[f]
             
             # SMPL coordinate system: X right, Y up, Z forward
-            # Official SMPL-X addon armature is already in correct orientation
-            # Apply rotation directly without coordinate conversion
+            # SMPL-X addon bone local matrix has Y-up → Z-up conversion built-in
+            # We need to convert SMPL rotation to bone's local space
+            # Bone local matrix: Y→-Z, Z→Y (90deg rotation around X)
             
-            q = mat3_to_quat(Mr)
+            # Apply the same conversion as the bone's rest pose
+            Mr_converted = R_SMPL_TO_BLENDER @ Mr @ R_SMPL_TO_BLENDER.T
+            
+            q = mat3_to_quat(Mr_converted)
             pb = pbones['pelvis']
             pb.rotation_quaternion = q
             pb.keyframe_insert(data_path='rotation_quaternion', frame=frame)
@@ -244,9 +248,10 @@ def bake_animation(
             if joint_name not in pbones:
                 continue  # Skip if bone doesn't exist in armature
             
-            # Apply rotation directly without coordinate conversion
+            # Convert SMPL rotation to bone's local space (same as root)
             M = R_body[f, idx]
-            q = mat3_to_quat(M)
+            M_converted = R_SMPL_TO_BLENDER @ M @ R_SMPL_TO_BLENDER.T
+            q = mat3_to_quat(M_converted)
             
             pb = pbones[joint_name]
             pb.rotation_quaternion = q
