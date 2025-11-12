@@ -210,6 +210,7 @@ def bake_animation(
         with_root_motion: If True, apply camera translation to root
     """
     import bpy
+    import math
     
     bpy.context.scene.render.fps = int(fps)
     
@@ -221,6 +222,12 @@ def bake_animation(
     if camera is not None:
         camera = camera[order]
     frame_idx = frame_idx - frame_idx.min() + 1
+    
+    # Fix NPZ inversion: Apply 180° X-axis rotation to armature object (like PHALP does to mesh)
+    arm_obj.rotation_mode = 'XYZ'
+    arm_obj.rotation_euler = (math.radians(180), 0, 0)
+    bpy.context.view_layer.update()
+    print("[fix] Applied 180° X-axis rotation to armature object to fix NPZ inversion")
     
     # Set rotation mode for all pose bones
     for b in arm_obj.pose.bones:
@@ -235,22 +242,10 @@ def bake_animation(
         
         # Root bone (pelvis) - global orientation
         if 'pelvis' in pbones:
-            Mr_camera = R_root[f]
+            Mr = R_root[f]
             
-            # Step 1: Convert from PHALP camera (Y-down, inverted) to world (Y-up)
-            Mr_world = R_CAM_TO_WORLD @ Mr_camera @ R_CAM_TO_WORLD.T
-            
-            # Step 2: Convert from SMPL world (Y-up) to Blender (Z-up)
-            Mr_blender = R_SMPL_TO_BLENDER @ Mr_world @ R_SMPL_TO_BLENDER.T
-            
-            # Log first frame for verification
-            if f == 0:
-                print(f"\n[coord] Frame 0 root conversion:")
-                print(f"  Camera (Y-down): [[{Mr_camera[0,0]:.4f}, {Mr_camera[0,1]:.4f}, {Mr_camera[0,2]:.4f}], ...]")
-                print(f"  World (Y-up):    [[{Mr_world[0,0]:.4f}, {Mr_world[0,1]:.4f}, {Mr_world[0,2]:.4f}], ...]")
-                print(f"  Blender (Z-up):  [[{Mr_blender[0,0]:.4f}, {Mr_blender[0,1]:.4f}, {Mr_blender[0,2]:.4f}], ...]")
-            
-            q = mat3_to_quat(Mr_blender)
+            # Apply NPZ rotation directly (no conversion needed after object rotation)
+            q = mat3_to_quat(Mr)
             pb = pbones['pelvis']
             pb.rotation_quaternion = q
             pb.keyframe_insert(data_path='rotation_quaternion', frame=frame)
@@ -278,13 +273,9 @@ def bake_animation(
             if joint_name not in pbones:
                 continue  # Skip if bone doesn't exist in armature
             
-            # Convert body joint rotation (same two-step process as root)
-            M_camera = R_body[f, idx]
-            # Step 1: Camera → World
-            M_world = R_CAM_TO_WORLD @ M_camera @ R_CAM_TO_WORLD.T
-            # Step 2: World → Blender
-            M_blender = R_SMPL_TO_BLENDER @ M_world @ R_SMPL_TO_BLENDER.T
-            q = mat3_to_quat(M_blender)
+            # Apply NPZ rotation directly (no conversion needed after object rotation)
+            M = R_body[f, idx]
+            q = mat3_to_quat(M)
             
             pb = pbones[joint_name]
             pb.rotation_quaternion = q
@@ -301,21 +292,6 @@ def bake_animation(
         arm_obj.animation_data.action = bpy.data.actions.new(name='Take 001')
     
     print(f"[bake] Baked {frame_idx.shape[0]} frames (range: {frame_idx.min()}-{frame_idx.max()})")
-    
-    # Verify: Check frame 1 pose orientation
-    import bpy
-    from mathutils import Vector
-    bpy.context.scene.frame_set(int(frame_idx[0]))
-    if 'head' in arm_obj.pose.bones:
-        head_world = arm_obj.matrix_world @ arm_obj.pose.bones['head'].matrix @ Vector((0,0,0))
-        print(f"\n[verify] Frame {int(frame_idx[0])} verification:")
-        print(f"  Head position: {head_world}")
-        print(f"  Z coordinate: {head_world.z:.4f}")
-        if head_world.z > 0:
-            print(f"  ✓ Character is UPRIGHT (head above origin)")
-        else:
-            print(f"  ✗ Character is INVERTED (head below origin)")
-            print(f"  WARNING: Coordinate conversion may be incorrect!")
 
 
 def export_fbx_for_unity(arm_obj, out_path: str):
