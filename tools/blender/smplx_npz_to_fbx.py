@@ -135,6 +135,15 @@ def create_smplx_character_with_shape(betas: np.ndarray | None = None) -> "bpy.t
     
     print(f"[smplx] Created armature: {arm.name}")
     
+    # Apply object-level rotation for Unity compatibility
+    # Unity expects Y-up, but SMPL-X addon creates Z-up armature
+    # Add -90 degree rotation around X axis at object level
+    import math
+    arm.rotation_mode = 'XYZ'
+    arm.rotation_euler = (math.radians(-90), 0, 0)
+    bpy.context.view_layer.update()
+    print(f"[smplx] Applied object rotation for Unity: X=-90°")
+    
     # Apply body shape (betas) if provided
     if betas is not None and mesh is not None:
         # Use the first frame's betas (assuming consistent shape across frames)
