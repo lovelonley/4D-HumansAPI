@@ -34,8 +34,11 @@ def main():
     betas = data.get('betas', None)
     
     print("\n" + "="*70)
-    print("VERIFYING 4D-HUMANS SMPL DATA")
+    print("VERIFYING SMPL DATA FROM NPZ")
     print("="*70)
+    print(f"\nNPZ file: {args.npz}")
+    print(f"Note: This NPZ should contain world-space rotations (Y-up)")
+    print(f"      after coordinate system conversion from PHALP camera space.")
     
     # Clean scene
     for obj in list(bpy.data.objects):
@@ -71,12 +74,13 @@ def main():
         else:
             print(f"  ✗ Rest pose is WRONG (head below origin)")
     
-    # Apply FIRST FRAME of SMPL data WITHOUT any conversion
-    print(f"\n[3] Applying SMPL data (frame 0) WITHOUT conversion:")
+    # Apply FIRST FRAME of SMPL data directly (should already be in world space)
+    print(f"\n[3] Applying SMPL data (frame 0) directly:")
     Mr = R_root[0]
     print(f"  R_root[0]:")
     for row in Mr:
         print(f"    [{', '.join(f'{x:7.4f}' for x in row)}]")
+    print(f"  (This should be in world space Y-up if conversion was applied)")
     
     # Convert to quaternion
     m = Matrix(((float(Mr[0,0]), float(Mr[0,1]), float(Mr[0,2])),
@@ -104,10 +108,11 @@ def main():
         print(f"  Z coordinate: {head_pose_world.z:.4f}")
         
         if head_pose_world.z > 0:
-            print(f"\n✓ SMPL DATA IS CORRECT - head is above origin")
+            print(f"\n✓✓✓ DATA IS CORRECT - head is above origin")
+            print(f"    Coordinate system conversion was successful!")
         else:
-            print(f"\n✗ SMPL DATA IS WRONG - head is below origin")
-            print(f"   This means 4D-Humans output is inverted!")
+            print(f"\n✗✗✗ DATA IS STILL WRONG - head is below origin")
+            print(f"    Coordinate system conversion failed or not applied!")
     
     print("\n" + "="*70)
     print("VERIFICATION COMPLETE")
