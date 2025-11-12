@@ -264,8 +264,8 @@ class FourDHumansPipeline:
         cmd = [
             sys.executable,
             str(self.extract_script),
-            "--input", tracking_pkl,
-            "--output", str(output_npz),
+            "--pkl", tracking_pkl,
+            "--out", str(output_npz),
             "--tid", str(track_id)
         ]
         
