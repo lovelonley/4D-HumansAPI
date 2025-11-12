@@ -91,23 +91,29 @@ def mat3_to_quat(M: np.ndarray):
 
 
 # Coordinate system conversions:
-# 1. PHALP outputs rotations in camera coordinate system (Y-down, image coordinates)
-# 2. We need world coordinate system (Y-up, standard SMPL)
-# 3. Then convert to Blender coordinate system (Z-up)
+# 1. PHALP outputs rotations in camera coordinate system (Y-down, inverted)
+# 2. Convert to world coordinate system (Y-up, standard SMPL)
+# 3. Convert to Blender coordinate system (Z-up, SMPL-X addon format)
 
-# Camera (Y-down) -> World (Y-up): 180° rotation around X axis
+# Step 1: Camera (Y-down) -> World (Y-up): 180° rotation around X axis
+# This flips Y and Z axes
 R_CAM_TO_WORLD = np.array([
     [1.0,  0.0,  0.0],
     [0.0, -1.0,  0.0],
     [0.0,  0.0, -1.0]
 ], dtype=np.float64)
 
-# World SMPL (Y-up) -> Blender (Z-up): 90° rotation around X axis
+# Step 2: SMPL World (Y-up) -> Blender (Z-up): 90° rotation around X axis
+# This rotates Y-up to Z-up
 R_SMPL_TO_BLENDER = np.array([
     [1.0,  0.0,  0.0],
     [0.0,  0.0, -1.0],
     [0.0,  1.0,  0.0]
 ], dtype=np.float64)
+
+print("[coord] Coordinate conversion matrices initialized:")
+print("[coord]   R_CAM_TO_WORLD: 180° X-axis (flip Y and Z)")
+print("[coord]   R_SMPL_TO_BLENDER: 90° X-axis (Y-up → Z-up)")
 
 
 def create_smplx_character_with_shape(betas: np.ndarray | None = None) -> "bpy.types.Object":
@@ -229,15 +235,22 @@ def bake_animation(
         
         # Root bone (pelvis) - global orientation
         if 'pelvis' in pbones:
-            Mr = R_root[f]
+            Mr_camera = R_root[f]
             
-            # Convert from PHALP camera coordinate system (Y-down) to world (Y-up)
-            # This matches the transformation PHALP applies when rendering visualization
-            Mr_world = R_CAM_TO_WORLD @ Mr @ R_CAM_TO_WORLD.T
+            # Step 1: Convert from PHALP camera (Y-down, inverted) to world (Y-up)
+            Mr_world = R_CAM_TO_WORLD @ Mr_camera @ R_CAM_TO_WORLD.T
             
-            # Don't convert to Blender Z-up here - let FBX exporter handle it
-            # SMPL-X addon bones are in Y-up space, matching SMPL standard
-            q = mat3_to_quat(Mr_world)
+            # Step 2: Convert from SMPL world (Y-up) to Blender (Z-up)
+            Mr_blender = R_SMPL_TO_BLENDER @ Mr_world @ R_SMPL_TO_BLENDER.T
+            
+            # Log first frame for verification
+            if f == 0:
+                print(f"\n[coord] Frame 0 root conversion:")
+                print(f"  Camera (Y-down): [[{Mr_camera[0,0]:.4f}, {Mr_camera[0,1]:.4f}, {Mr_camera[0,2]:.4f}], ...]")
+                print(f"  World (Y-up):    [[{Mr_world[0,0]:.4f}, {Mr_world[0,1]:.4f}, {Mr_world[0,2]:.4f}], ...]")
+                print(f"  Blender (Z-up):  [[{Mr_blender[0,0]:.4f}, {Mr_blender[0,1]:.4f}, {Mr_blender[0,2]:.4f}], ...]")
+            
+            q = mat3_to_quat(Mr_blender)
             pb = pbones['pelvis']
             pb.rotation_quaternion = q
             pb.keyframe_insert(data_path='rotation_quaternion', frame=frame)
@@ -265,10 +278,13 @@ def bake_animation(
             if joint_name not in pbones:
                 continue  # Skip if bone doesn't exist in armature
             
-            # Convert body joint rotation (camera to world, same as root)
-            M = R_body[f, idx]
-            M_world = R_CAM_TO_WORLD @ M @ R_CAM_TO_WORLD.T
-            q = mat3_to_quat(M_world)
+            # Convert body joint rotation (same two-step process as root)
+            M_camera = R_body[f, idx]
+            # Step 1: Camera → World
+            M_world = R_CAM_TO_WORLD @ M_camera @ R_CAM_TO_WORLD.T
+            # Step 2: World → Blender
+            M_blender = R_SMPL_TO_BLENDER @ M_world @ R_SMPL_TO_BLENDER.T
+            q = mat3_to_quat(M_blender)
             
             pb = pbones[joint_name]
             pb.rotation_quaternion = q
@@ -285,6 +301,21 @@ def bake_animation(
         arm_obj.animation_data.action = bpy.data.actions.new(name='Take 001')
     
     print(f"[bake] Baked {frame_idx.shape[0]} frames (range: {frame_idx.min()}-{frame_idx.max()})")
+    
+    # Verify: Check frame 1 pose orientation
+    import bpy
+    from mathutils import Vector
+    bpy.context.scene.frame_set(int(frame_idx[0]))
+    if 'head' in arm_obj.pose.bones:
+        head_world = arm_obj.matrix_world @ arm_obj.pose.bones['head'].matrix @ Vector((0,0,0))
+        print(f"\n[verify] Frame {int(frame_idx[0])} verification:")
+        print(f"  Head position: {head_world}")
+        print(f"  Z coordinate: {head_world.z:.4f}")
+        if head_world.z > 0:
+            print(f"  ✓ Character is UPRIGHT (head above origin)")
+        else:
+            print(f"  ✗ Character is INVERTED (head below origin)")
+            print(f"  WARNING: Coordinate conversion may be incorrect!")
 
 
 def export_fbx_for_unity(arm_obj, out_path: str):
@@ -306,14 +337,18 @@ def export_fbx_for_unity(arm_obj, out_path: str):
     bpy.context.view_layer.objects.active = arm_obj
     
     # Standard FBX export with Unity settings
-    # Our rotations are in SMPL world space (Y-up)
-    # Let FBX exporter convert to Unity coordinate system
+    # Our rotations are now in Blender space (Z-up) after conversion
+    # Let FBX exporter convert Blender (Z-up) to Unity (Y-up)
+    print("[export] FBX export settings:")
+    print("  bake_space_transform=True (Blender Z-up → Unity Y-up)")
+    print("  axis_forward='-Z', axis_up='Y' (Unity coordinate system)")
+    
     bpy.ops.export_scene.fbx(
         filepath=out_path,
         use_selection=True,
         apply_unit_scale=True,
         apply_scale_options='FBX_SCALE_ALL',
-        bake_space_transform=True,  # Let exporter handle coordinate conversion
+        bake_space_transform=True,  # Blender Z-up → Unity Y-up
         object_types={'ARMATURE', 'MESH'},
         use_mesh_modifiers=True,
         mesh_smooth_type='FACE',
