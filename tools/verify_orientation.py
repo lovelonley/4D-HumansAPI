@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 验证 PKL 和 NPZ 中人物方向是否一致
-比较第一帧的：头、左手、右手、脚的位置
+直接比较 SMPL 旋转矩阵，不需要 SMPL 模型
 """
 
 import argparse
@@ -37,115 +37,77 @@ def get_pkl_first_frame(pkl_data, tid):
         
         smpl = smpl_list[idx]
         return {
-            'global_orient': np.array(smpl['global_orient']).reshape(1, 3, 3),
-            'body_pose': np.array(smpl['body_pose']).reshape(1, 23, 3, 3),
-            'betas': np.array(smpl.get('betas', np.zeros(10))).reshape(1, 10)
+            'R_root': np.array(smpl['global_orient']).reshape(3, 3),
+            'R_body': np.array(smpl['body_pose']).reshape(23, 3, 3)
         }
     
     return None
 
 
-def get_smpl_model_path():
-    """查找 SMPL 模型路径"""
-    import os
-    candidates = [
-        os.path.expanduser('~/.cache/4DHumans/data/smpl'),
-        os.path.expanduser('~/.cache/phalp/3D/models/smpl'),
-        'data/smpl'
-    ]
-    for path in candidates:
-        if os.path.exists(path):
-            return path
-    raise FileNotFoundError(f"SMPL 模型未找到，检查过的路径: {candidates}")
-
-
-def get_key_joints(smpl_params):
+def analyze_rotation_matrix(R, name):
     """
-    用 SMPL 计算关键点：头(15)、左手(20)、右手(21)、左脚(10)、右脚(11)
+    分析旋转矩阵的方向
+    旋转矩阵的列向量 = 局部坐标轴在全局坐标系中的方向
     """
-    try:
-        import torch
-        from smplx import SMPL
-        
-        model_path = get_smpl_model_path()
-        smpl = SMPL(model_path=model_path, gender='neutral', batch_size=1)
-        
-        output = smpl(
-            global_orient=torch.tensor(smpl_params['global_orient'], dtype=torch.float32),
-            body_pose=torch.tensor(smpl_params['body_pose'], dtype=torch.float32),
-            betas=torch.tensor(smpl_params['betas'], dtype=torch.float32)
-        )
-        
-        joints = output.joints[0].detach().numpy()  # (45, 3)
-        
-        # SMPL 关节索引
-        HEAD = 15
-        LEFT_WRIST = 20
-        RIGHT_WRIST = 21
-        LEFT_FOOT = 10
-        RIGHT_FOOT = 11
-        
-        return {
-            'head': joints[HEAD],
-            'left_hand': joints[LEFT_WRIST],
-            'right_hand': joints[RIGHT_WRIST],
-            'left_foot': joints[LEFT_FOOT],
-            'right_foot': joints[RIGHT_FOOT]
-        }
-    except Exception as e:
-        print(f"Error: {e}")
-        print("需要安装: pip install smplx torch")
-        sys.exit(1)
-
-
-def print_joints(joints, name):
     print(f"\n=== {name} ===")
-    for key, pos in joints.items():
-        print(f"{key:12s}: [{pos[0]:8.4f}, {pos[1]:8.4f}, {pos[2]:8.4f}]")
-
-
-def analyze_orientation(joints):
-    """分析方向"""
-    head = joints['head']
-    left_foot = joints['left_foot']
-    right_foot = joints['right_foot']
+    print("R_root (pelvis 全局旋转):")
+    print(R)
     
-    avg_foot_y = (left_foot[1] + right_foot[1]) / 2
-    head_foot_diff = head[1] - avg_foot_y
+    # 列向量 = 局部轴在全局中的方向
+    local_x = R[:, 0]  # 局部 X 轴（右）
+    local_y = R[:, 1]  # 局部 Y 轴（上）
+    local_z = R[:, 2]  # 局部 Z 轴（前）
     
-    print(f"\nHead Y: {head[1]:.4f}, Feet Y: {avg_foot_y:.4f}, Diff: {head_foot_diff:.4f}")
+    print(f"\n局部坐标轴在全局坐标系中的方向:")
+    print(f"  X (右): [{local_x[0]:7.4f}, {local_x[1]:7.4f}, {local_x[2]:7.4f}]")
+    print(f"  Y (上): [{local_y[0]:7.4f}, {local_y[1]:7.4f}, {local_y[2]:7.4f}]")
+    print(f"  Z (前): [{local_z[0]:7.4f}, {local_z[1]:7.4f}, {local_z[2]:7.4f}]")
     
-    if head_foot_diff > 0.3:
-        print("→ 正立 (头在上)")
-    elif head_foot_diff < -0.3:
-        print("→ 倒立 (头在下)")
+    # 判断上下方向
+    print(f"\n上下方向判断 (Y轴):")
+    if local_y[1] > 0.7:
+        print(f"  ✓ 正立 (局部Y指向全局+Y, 分量={local_y[1]:.4f})")
+    elif local_y[1] < -0.7:
+        print(f"  ✗ 倒立 (局部Y指向全局-Y, 分量={local_y[1]:.4f})")
     else:
-        print("→ 方向不明")
+        print(f"  ? 倾斜 (Y分量={local_y[1]:.4f})")
     
-    # 左右手朝向（判断是否镜像）
-    left_right_x = joints['left_hand'][0] - joints['right_hand'][0]
-    print(f"\nLeft-Right X: {left_right_x:.4f}")
-    if left_right_x < 0:
-        print("→ 可能镜像了（左手在右边）")
+    # 判断前后方向
+    print(f"\n前后方向判断 (Z轴):")
+    if local_z[2] > 0.7:
+        print(f"  → 面向前方 (局部Z指向全局+Z, 分量={local_z[2]:.4f})")
+    elif local_z[2] < -0.7:
+        print(f"  → 面向后方 (局部Z指向全局-Z, 分量={local_z[2]:.4f})")
+    else:
+        print(f"  → 侧向 (Z分量={local_z[2]:.4f})")
+    
+    return {
+        'local_y': local_y,
+        'local_z': local_z,
+        'upright': local_y[1] > 0.7,
+        'inverted': local_y[1] < -0.7
+    }
 
 
-def compare_joints(joints1, joints2):
-    print("\n" + "=" * 60)
-    print("差异对比")
-    print("=" * 60)
+def compare_matrices(R1, R2):
+    """比较两个旋转矩阵是否一致"""
+    diff = np.abs(R1 - R2)
+    max_diff = np.max(diff)
+    mean_diff = np.mean(diff)
     
-    all_close = True
-    for key in joints1.keys():
-        diff = np.abs(joints1[key] - joints2[key])
-        max_diff = np.max(diff)
-        print(f"{key:12s}: max_diff = {max_diff:.6f}", end="")
-        if max_diff < 1e-4:
-            print(" ✓")
-        else:
-            print(" ✗ 不一致！")
-            all_close = False
+    print(f"\n旋转矩阵差异:")
+    print(f"  最大差异: {max_diff:.6f}")
+    print(f"  平均差异: {mean_diff:.6f}")
     
-    return all_close
+    if max_diff < 1e-5:
+        print(f"  ✓ 完全一致")
+        return True
+    elif max_diff < 1e-3:
+        print(f"  ≈ 基本一致 (可能是浮点精度)")
+        return True
+    else:
+        print(f"  ✗ 不一致！")
+        return False
 
 
 def main():
@@ -155,9 +117,9 @@ def main():
     ap.add_argument('--tid', type=int, default=1)
     args = ap.parse_args()
     
-    print("=" * 60)
-    print("验证 PKL → NPZ 方向一致性")
-    print("=" * 60)
+    print("=" * 70)
+    print("验证 PKL → NPZ 数据一致性和方向")
+    print("=" * 70)
     
     # 1. 加载 PKL 第一帧
     print(f"\n[1] 加载 PKL: {args.pkl}")
@@ -172,33 +134,49 @@ def main():
     print(f"[2] 加载 NPZ: {args.npz}")
     npz_data = np.load(args.npz)
     npz_smpl = {
-        'global_orient': npz_data['R_root'][0:1],
-        'body_pose': npz_data['R_body'][0:1],
-        'betas': npz_data['betas'][0:1] if 'betas' in npz_data else np.zeros((1, 10))
+        'R_root': npz_data['R_root'][0],
+        'R_body': npz_data['R_body'][0]
     }
     
-    # 3. 计算关键点
-    print("\n[3] 计算关键点（需要 SMPL 模型）...")
-    pkl_joints = get_key_joints(pkl_smpl)
-    npz_joints = get_key_joints(npz_smpl)
+    # 3. 比较 R_root
+    print("\n" + "=" * 70)
+    print("对比 R_root (pelvis 全局旋转)")
+    print("=" * 70)
     
-    # 4. 显示位置
-    print_joints(pkl_joints, "PKL 关键点")
-    analyze_orientation(pkl_joints)
+    pkl_match = compare_matrices(pkl_smpl['R_root'], npz_smpl['R_root'])
     
-    print_joints(npz_joints, "NPZ 关键点")
-    analyze_orientation(npz_joints)
+    # 4. 分析方向
+    print("\n" + "=" * 70)
+    print("方向分析")
+    print("=" * 70)
     
-    # 5. 对比
-    all_match = compare_joints(pkl_joints, npz_joints)
+    pkl_orient = analyze_rotation_matrix(pkl_smpl['R_root'], "PKL")
+    npz_orient = analyze_rotation_matrix(npz_smpl['R_root'], "NPZ")
     
-    print("\n" + "=" * 60)
+    # 5. 结论
+    print("\n" + "=" * 70)
     print("结论")
-    print("=" * 60)
-    if all_match:
-        print("✓ PKL 和 NPZ 完全一致")
+    print("=" * 70)
+    
+    if pkl_match:
+        print("✓ PKL 和 NPZ 的 R_root 完全一致")
     else:
-        print("✗ PKL 和 NPZ 不一致")
+        print("✗ PKL 和 NPZ 的 R_root 不一致")
+    
+    if pkl_orient['upright'] == npz_orient['upright']:
+        print("✓ 方向一致")
+    else:
+        print("✗ 方向不一致")
+    
+    # 说明当前状态
+    if pkl_orient['inverted']:
+        print("\n⚠  数据显示角色是倒立的 (Y-down 坐标系)")
+        print("   这是 PHALP 相机坐标系的预期行为")
+        print("   导出 FBX 时需要处理这个翻转")
+    elif pkl_orient['upright']:
+        print("\n✓ 数据显示角色是正立的")
+    
+    sys.exit(0 if pkl_match else 1)
 
 
 if __name__ == '__main__':
