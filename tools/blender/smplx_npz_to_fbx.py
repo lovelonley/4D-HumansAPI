@@ -213,11 +213,10 @@ def bake_animation(
             Mr = R_root[f]
             
             # SMPL coordinate system: X right, Y up, Z forward
-            # Blender coordinate system: X right, Y forward, Z up
-            # Convert SMPL rotation to Blender space
-            Mr_bl = R_SMPL_TO_BLENDER @ Mr @ R_SMPL_TO_BLENDER.T
+            # Official SMPL-X addon armature is already in correct orientation
+            # Apply rotation directly without coordinate conversion
             
-            q = mat3_to_quat(Mr_bl)
+            q = mat3_to_quat(Mr)
             pb = pbones['pelvis']
             pb.rotation_quaternion = q
             pb.keyframe_insert(data_path='rotation_quaternion', frame=frame)
@@ -245,10 +244,9 @@ def bake_animation(
             if joint_name not in pbones:
                 continue  # Skip if bone doesn't exist in armature
             
-            # Get rotation matrix for this joint and convert to Blender space
+            # Apply rotation directly without coordinate conversion
             M = R_body[f, idx]
-            M_bl = R_SMPL_TO_BLENDER @ M @ R_SMPL_TO_BLENDER.T
-            q = mat3_to_quat(M_bl)
+            q = mat3_to_quat(M)
             
             pb = pbones[joint_name]
             pb.rotation_quaternion = q
@@ -294,12 +292,14 @@ def export_fbx_for_unity(arm_obj, out_path: str):
         print(f"[export] smplx_export_fbx failed: {e}, using standard FBX export")
     
     # Fallback: standard FBX export with Unity settings
+    # SMPL-X addon armature + SMPL rotations are already in correct orientation
+    # Export with Unity-compatible axis settings
     bpy.ops.export_scene.fbx(
         filepath=out_path,
         use_selection=True,
         apply_unit_scale=True,
         apply_scale_options='FBX_SCALE_ALL',
-        bake_space_transform=True,
+        bake_space_transform=True,  # Let FBX exporter handle coordinate conversion
         object_types={'ARMATURE', 'MESH'},
         use_mesh_modifiers=True,
         mesh_smooth_type='FACE',
@@ -316,8 +316,8 @@ def export_fbx_for_unity(arm_obj, out_path: str):
         path_mode='AUTO',
         embed_textures=False,
         batch_mode='OFF',
-        axis_forward='-Z',
-        axis_up='Y'
+        axis_forward='-Z',  # Unity forward
+        axis_up='Y'         # Unity up
     )
     print(f"[export] Standard FBX export (Unity compatible) -> {out_path}")
 
