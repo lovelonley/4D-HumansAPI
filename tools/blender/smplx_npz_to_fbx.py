@@ -90,6 +90,15 @@ def mat3_to_quat(M: np.ndarray):
     return m.to_quaternion()
 
 
+# Coordinate system conversion: SMPL (Y-up) -> Blender (Z-up)
+# Rotate 90 degrees around X axis: Y-up becomes Z-up
+R_SMPL_TO_BLENDER = np.array([
+    [1.0,  0.0,  0.0],
+    [0.0,  0.0, -1.0],
+    [0.0,  1.0,  0.0]
+], dtype=np.float64)
+
+
 def create_smplx_character_with_shape(betas: np.ndarray | None = None) -> "bpy.types.Object":
     """
     Create SMPL-X character using official addon and apply body shape (betas).
@@ -205,12 +214,10 @@ def bake_animation(
             
             # SMPL coordinate system: X right, Y up, Z forward
             # Blender coordinate system: X right, Y forward, Z up
-            # Unity coordinate system: X right, Y up, Z forward (same as SMPL)
-            #
-            # The official SMPL-X addon handles coordinate conversion internally,
-            # so we apply rotations directly without manual conversion.
+            # Convert SMPL rotation to Blender space
+            Mr_bl = R_SMPL_TO_BLENDER @ Mr @ R_SMPL_TO_BLENDER.T
             
-            q = mat3_to_quat(Mr)
+            q = mat3_to_quat(Mr_bl)
             pb = pbones['pelvis']
             pb.rotation_quaternion = q
             pb.keyframe_insert(data_path='rotation_quaternion', frame=frame)
@@ -238,9 +245,10 @@ def bake_animation(
             if joint_name not in pbones:
                 continue  # Skip if bone doesn't exist in armature
             
-            # Get rotation matrix for this joint
+            # Get rotation matrix for this joint and convert to Blender space
             M = R_body[f, idx]
-            q = mat3_to_quat(M)
+            M_bl = R_SMPL_TO_BLENDER @ M @ R_SMPL_TO_BLENDER.T
+            q = mat3_to_quat(M_bl)
             
             pb = pbones[joint_name]
             pb.rotation_quaternion = q
