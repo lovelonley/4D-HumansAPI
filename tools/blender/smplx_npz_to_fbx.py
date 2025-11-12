@@ -297,14 +297,14 @@ def export_fbx_for_unity(arm_obj, out_path: str):
         print(f"[export] smplx_export_fbx failed: {e}, using standard FBX export")
     
     # Fallback: standard FBX export with Unity settings
-    # SMPL-X addon armature + SMPL rotations are already in correct orientation
-    # Export with Unity-compatible axis settings
+    # We already converted SMPL (Y-up) to Blender bone space (Z-up) in code
+    # Export with Blender's native axes, no additional transform
     bpy.ops.export_scene.fbx(
         filepath=out_path,
         use_selection=True,
         apply_unit_scale=True,
         apply_scale_options='FBX_SCALE_ALL',
-        bake_space_transform=True,  # Let FBX exporter handle coordinate conversion
+        bake_space_transform=False,  # Don't add extra rotation, we already converted
         object_types={'ARMATURE', 'MESH'},
         use_mesh_modifiers=True,
         mesh_smooth_type='FACE',
@@ -321,8 +321,8 @@ def export_fbx_for_unity(arm_obj, out_path: str):
         path_mode='AUTO',
         embed_textures=False,
         batch_mode='OFF',
-        axis_forward='-Z',  # Unity forward
-        axis_up='Y'         # Unity up
+        axis_forward='Y',   # Blender Y-forward (native)
+        axis_up='Z'         # Blender Z-up (native)
     )
     print(f"[export] Standard FBX export (Unity compatible) -> {out_path}")
 
