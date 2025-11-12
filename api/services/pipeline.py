@@ -57,7 +57,7 @@ class FourDHumansPipeline:
         self.track_script = self.project_root / "track.py"
         self.extract_script = self.project_root / "tools" / "extract_track_for_tid.py"
         self.smooth_script = self.project_root / "tools" / "adapt_smoothnet.py"
-        self.fbx_script = self.project_root / "tools" / "blender" / "smplx_npz_to_fbx.py"
+        self.fbx_script = self.project_root / "tools" / "blender" / "pkl_npz_to_fbx.py"
         
         # 验证脚本存在
         for script in [self.track_script, self.extract_script, self.smooth_script, self.fbx_script]:
