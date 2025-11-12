@@ -71,11 +71,6 @@ def extract_track(data: Dict[str, Any], target_tid: int) -> Dict[str, np.ndarray
     frame_keys = list(data.keys())
     frame_keys = natural_frame_sort_keys(frame_keys, data)
 
-    # Coordinate system conversion: PHALP uses camera coordinate system (Y-down)
-    # We need world coordinate system (Y-up) for standard SMPL
-    # This is the same transformation PHALP applies when rendering visualization
-    R_FLIP_X = np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]], dtype=np.float32)
-
     R_root_list: List[np.ndarray] = []
     R_body_list: List[np.ndarray] = []
     cam_list: List[np.ndarray] = []
@@ -106,12 +101,6 @@ def extract_track(data: Dict[str, Any], target_tid: int) -> Dict[str, np.ndarray
         try:
             R_root = to_rotation_matrix_array(smpl["global_orient"], (3, 3))
             R_body = to_rotation_matrix_array(smpl["body_pose"], (23, 3, 3))
-            
-            # Convert from PHALP camera coordinate system to world coordinate system
-            # R' = R_FLIP_X @ R @ R_FLIP_X^T
-            R_root = R_FLIP_X @ R_root @ R_FLIP_X.T
-            R_body = np.array([R_FLIP_X @ r @ R_FLIP_X.T for r in R_body])
-            
             # Extract betas (body shape parameters)
             betas = np.array(smpl.get("betas", np.zeros(10)), dtype=np.float32)
         except Exception as e:
