@@ -549,8 +549,8 @@ class FourDHumansPipeline:
             track_id 或 None
         """
         try:
-            with open(tracking_pkl, 'rb') as f:
-                data = pickle.load(f)
+            import joblib
+            data = joblib.load(tracking_pkl)
             
             if not data:
                 return None
