@@ -90,17 +90,12 @@ def mat3_to_quat(M: np.ndarray):
     return m.to_quaternion()
 
 
-# Coordinate system conversion for SMPL-X addon bone space
-# SMPL-X addon bones have: Y-axis → Blender -Z, Z-axis → Blender Y
-# This is the INVERSE of what we need: we need to convert SMPL rotations TO this space
-# SMPL: Y-up, Z-forward → Bone space: Y→-Z, Z→Y
-# So: SMPL_Y → Bone_Y means: (0,1,0) → (0,0,-1) in Blender world
-#     SMPL_Z → Bone_Z means: (0,0,1) → (0,1,0) in Blender world
-# Inverse transformation: Bone expects rotations in its local frame
-R_SMPL_TO_BONE = np.array([
-    [1.0,  0.0,  0.0],   # X unchanged
-    [0.0,  0.0,  1.0],   # SMPL Y → Bone Z
-    [0.0, -1.0,  0.0]    # SMPL Z → Bone -Y
+# Coordinate system conversion: SMPL (Y-up) -> Blender (Z-up)
+# Rotate 90 degrees around X axis: Y-up becomes Z-up
+R_SMPL_TO_BLENDER = np.array([
+    [1.0,  0.0,  0.0],
+    [0.0,  0.0, -1.0],
+    [0.0,  1.0,  0.0]
 ], dtype=np.float64)
 
 
@@ -140,7 +135,14 @@ def create_smplx_character_with_shape(betas: np.ndarray | None = None) -> "bpy.t
     
     print(f"[smplx] Created armature: {arm.name}")
     
-    # Don't apply object-level rotation - handle it in bone rotations instead
+    # Apply object-level rotation for Unity compatibility
+    # Unity expects Y-up, but SMPL-X addon creates Z-up armature
+    # Add -90 degree rotation around X axis at object level
+    import math
+    arm.rotation_mode = 'XYZ'
+    arm.rotation_euler = (math.radians(-90), 0, 0)
+    bpy.context.view_layer.update()
+    print(f"[smplx] Applied object rotation for Unity: X=-90°")
     
     # Apply body shape (betas) if provided
     if betas is not None and mesh is not None:
@@ -220,9 +222,12 @@ def bake_animation(
             Mr = R_root[f]
             
             # SMPL coordinate system: X right, Y up, Z forward
-            # SMPL-X addon bone local space: Y→Blender(-Z), Z→Blender(Y)
-            # Convert SMPL rotation to bone's local coordinate system
-            Mr_converted = R_SMPL_TO_BONE @ Mr @ R_SMPL_TO_BONE.T
+            # SMPL-X addon bone local matrix has Y-up → Z-up conversion built-in
+            # We need to convert SMPL rotation to bone's local space
+            # Bone local matrix: Y→-Z, Z→Y (90deg rotation around X)
+            
+            # Apply the same conversion as the bone's rest pose
+            Mr_converted = R_SMPL_TO_BLENDER @ Mr @ R_SMPL_TO_BLENDER.T
             
             q = mat3_to_quat(Mr_converted)
             pb = pbones['pelvis']
@@ -254,7 +259,7 @@ def bake_animation(
             
             # Convert SMPL rotation to bone's local space (same as root)
             M = R_body[f, idx]
-            M_converted = R_SMPL_TO_BONE @ M @ R_SMPL_TO_BONE.T
+            M_converted = R_SMPL_TO_BLENDER @ M @ R_SMPL_TO_BLENDER.T
             q = mat3_to_quat(M_converted)
             
             pb = pbones[joint_name]
