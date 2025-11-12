@@ -235,6 +235,7 @@ def main():
     frame_idx = data['frame_idx'].astype(np.int32)
     camera = data.get('camera', None)
     fps = data.get('fps', None)
+    betas = data.get('betas', None)  # Preserve body shape parameters
 
     # Pack to 6D
     X = pack_rot_6d(R_root, R_body)  # (1,T,D)
@@ -262,14 +263,17 @@ def main():
         camera_s = None
 
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
-    np.savez_compressed(
-        args.out,
-        R_root=R_root_s,
-        R_body=R_body_s,
-        camera=camera_s if camera_s is not None else camera,
-        frame_idx=frame_idx[:T],
-        fps=fps if fps is not None else np.array([30], dtype=np.int32),
-    )
+    out_dict = {
+        'R_root': R_root_s,
+        'R_body': R_body_s,
+        'camera': camera_s if camera_s is not None else camera,
+        'frame_idx': frame_idx[:T],
+        'fps': fps if fps is not None else np.array([30], dtype=np.int32),
+    }
+    # Preserve betas if present
+    if betas is not None:
+        out_dict['betas'] = betas[:T]
+    np.savez_compressed(args.out, **out_dict)
     # Report smoothing statistics (before vs after)
     R0 = _stack24(R_root, R_body)
     Rs = _stack24(R_root_s, R_body_s)

@@ -75,6 +75,7 @@ def extract_track(data: Dict[str, Any], target_tid: int) -> Dict[str, np.ndarray
     R_body_list: List[np.ndarray] = []
     cam_list: List[np.ndarray] = []
     frame_idx_list: List[int] = []
+    betas_list: List[np.ndarray] = []
 
     for k in frame_keys:
         fr = data[k]
@@ -100,6 +101,8 @@ def extract_track(data: Dict[str, Any], target_tid: int) -> Dict[str, np.ndarray
         try:
             R_root = to_rotation_matrix_array(smpl["global_orient"], (3, 3))
             R_body = to_rotation_matrix_array(smpl["body_pose"], (23, 3, 3))
+            # Extract betas (body shape parameters)
+            betas = np.array(smpl.get("betas", np.zeros(10)), dtype=np.float32)
         except Exception as e:
             # Skip frames with malformed pose
             continue
@@ -116,6 +119,7 @@ def extract_track(data: Dict[str, Any], target_tid: int) -> Dict[str, np.ndarray
         R_body_list.append(R_body.astype(np.float32))
         cam_list.append(cam)
         frame_idx_list.append(frame_idx)
+        betas_list.append(betas)
 
     if not R_root_list:
         raise SystemExit("No valid frames extracted for the specified tid.")
@@ -125,12 +129,14 @@ def extract_track(data: Dict[str, Any], target_tid: int) -> Dict[str, np.ndarray
     R_body_arr = np.stack([R_body_list[i] for i in order], axis=0)
     cam_arr = np.stack([cam_list[i] for i in order], axis=0)
     frame_idx_arr = np.array([frame_idx_list[i] for i in order], dtype=np.int32)
+    betas_arr = np.stack([betas_list[i] for i in order], axis=0)
 
     return {
         "R_root": R_root_arr,
         "R_body": R_body_arr,
         "camera": cam_arr,
         "frame_idx": frame_idx_arr,
+        "betas": betas_arr,
     }
 
 
@@ -152,6 +158,7 @@ def main() -> None:
         R_body=track["R_body"],
         camera=track["camera"],
         frame_idx=track["frame_idx"],
+        betas=track["betas"],
         fps=np.array([args.fps], dtype=np.int32),
     )
     n_frames = int(track["R_root"].shape[0])
