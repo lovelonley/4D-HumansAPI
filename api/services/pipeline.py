@@ -390,8 +390,8 @@ class FourDHumansPipeline:
             "-b",  # 后台模式
             "-P", str(self.fbx_script),
             "--",
-            "--input", smoothed_npz,
-            "--output", str(output_fbx),
+            "--npz", smoothed_npz,
+            "--out", str(output_fbx),
             "--fps", str(fps),
             "--cam-scale", str(cam_scale)
         ]
