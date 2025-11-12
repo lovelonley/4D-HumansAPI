@@ -106,12 +106,11 @@ def create_smplx_character_with_shape(betas: np.ndarray | None = None) -> "bpy.t
         bpy.ops.object.delete()
     
     # Create SMPL-X character via addon
-    # Default: female, relaxed hands, UV_2023
-    bpy.ops.scene.smplx_add_gender(
-        smplx_gender='female',
-        smplx_handpose='relaxed',
-        smplx_texture='UV_2023'
-    )
+    # Set gender in window manager properties (addon reads from here)
+    bpy.context.window_manager.smplx_tool.smplx_gender = 'female'
+    
+    # Add SMPL-X character (no parameters needed)
+    bpy.ops.scene.smplx_add_gender()
     
     # Find armature
     arm = None
