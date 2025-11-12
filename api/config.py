@@ -51,11 +51,11 @@ class Settings(BaseSettings):
     # ============================================================
     # 超时配置（秒）
     # ============================================================
-    TASK_TIMEOUT: int = 600  # 总超时
-    TRACKING_TIMEOUT: int = 300  # 追踪超时
-    EXTRACTION_TIMEOUT: int = 30  # 提取超时
-    SMOOTHING_TIMEOUT: int = 60  # 平滑超时
-    FBX_EXPORT_TIMEOUT: int = 60  # 导出超时
+    TASK_TIMEOUT: int = 1200  # 总超时（20分钟）
+    TRACKING_TIMEOUT: int = 900  # 追踪超时（15分钟）
+    EXTRACTION_TIMEOUT: int = 60  # 提取超时（1分钟）
+    SMOOTHING_TIMEOUT: int = 120  # 平滑超时（2分钟）
+    FBX_EXPORT_TIMEOUT: int = 120  # 导出超时（2分钟）
     
     # ============================================================
     # 清理配置
