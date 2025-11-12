@@ -146,17 +146,16 @@ def create_smplx_character_with_shape(betas: np.ndarray | None = None) -> "bpy.t
     
     print(f"[smplx] Created armature: {arm.name}")
     
-    # Apply object-level rotation for Unity compatibility
-    # Unity expects Y-up, but SMPL-X addon creates Z-up armature
-    # Add -90 degree rotation around X axis at object level
-    import math
-    arm.rotation_mode = 'XYZ'
-    arm.rotation_euler = (math.radians(-90), 0, 0)
-    bpy.context.view_layer.update()
-    print(f"[smplx] Applied object rotation for Unity: X=-90°")
+    # Don't apply object-level rotation - we'll handle coordinate conversion in FBX export
+    # The armature is in Blender's native Z-up space
     
-    # Apply body shape (betas) if provided
-    if betas is not None and mesh is not None:
+    # Delete the mesh - we only need the armature for animation
+    if mesh is not None:
+        bpy.data.objects.remove(mesh, do_unlink=True)
+        print(f"[smplx] Removed mesh (only exporting armature)")
+    
+    # Apply body shape (betas) - disabled since we removed the mesh
+    if False and betas is not None and mesh is not None:
         # Use the first frame's betas (assuming consistent shape across frames)
         betas_vec = betas[0] if betas.ndim > 1 else betas
         
@@ -301,15 +300,10 @@ def export_fbx_for_unity(arm_obj, out_path: str):
     if bpy.context.mode != 'OBJECT':
         bpy.ops.object.mode_set(mode='OBJECT')
     
-    # Select armature and any child mesh
+    # Select only the armature (mesh was deleted during creation)
     bpy.ops.object.select_all(action='DESELECT')
     arm_obj.select_set(True)
     bpy.context.view_layer.objects.active = arm_obj
-    
-    # Also select child meshes (SMPL-X addon creates mesh as child)
-    for child in arm_obj.children:
-        if child.type == 'MESH':
-            child.select_set(True)
     
     # Standard FBX export with Unity settings
     # Our rotations are in SMPL world space (Y-up)
