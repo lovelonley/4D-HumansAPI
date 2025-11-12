@@ -232,14 +232,13 @@ def bake_animation(
         if 'pelvis' in pbones:
             Mr = R_root[f]
             
-            # Step 1: Convert from PHALP camera coordinate system to world coordinate system
-            # PHALP uses camera/image coordinates (Y-down), we need world coordinates (Y-up)
+            # Convert from PHALP camera coordinate system (Y-down) to world (Y-up)
+            # This matches the transformation PHALP applies when rendering visualization
             Mr_world = R_CAM_TO_WORLD @ Mr @ R_CAM_TO_WORLD.T
             
-            # Step 2: Convert from SMPL world (Y-up) to Blender (Z-up)
-            Mr_converted = R_SMPL_TO_BLENDER @ Mr_world @ R_SMPL_TO_BLENDER.T
-            
-            q = mat3_to_quat(Mr_converted)
+            # Don't convert to Blender Z-up here - let FBX exporter handle it
+            # SMPL-X addon bones are in Y-up space, matching SMPL standard
+            q = mat3_to_quat(Mr_world)
             pb = pbones['pelvis']
             pb.rotation_quaternion = q
             pb.keyframe_insert(data_path='rotation_quaternion', frame=frame)
@@ -267,13 +266,10 @@ def bake_animation(
             if joint_name not in pbones:
                 continue  # Skip if bone doesn't exist in armature
             
-            # Convert body joint rotation (same two-step process as root)
+            # Convert body joint rotation (camera to world, same as root)
             M = R_body[f, idx]
-            # Step 1: Camera to world
             M_world = R_CAM_TO_WORLD @ M @ R_CAM_TO_WORLD.T
-            # Step 2: SMPL to Blender
-            M_converted = R_SMPL_TO_BLENDER @ M_world @ R_SMPL_TO_BLENDER.T
-            q = mat3_to_quat(M_converted)
+            q = mat3_to_quat(M_world)
             
             pb = pbones[joint_name]
             pb.rotation_quaternion = q
@@ -301,32 +297,48 @@ def export_fbx_for_unity(arm_obj, out_path: str):
     """
     import bpy
     
+    # Ensure we're in object mode
+    if bpy.context.mode != 'OBJECT':
+        bpy.ops.object.mode_set(mode='OBJECT')
+    
+    # Select armature and any child mesh
     bpy.ops.object.select_all(action='DESELECT')
     arm_obj.select_set(True)
     bpy.context.view_layer.objects.active = arm_obj
     
+    # Also select child meshes (SMPL-X addon creates mesh as child)
+    for child in arm_obj.children:
+        if child.type == 'MESH':
+            child.select_set(True)
+    
     # Try addon's export operator first (it has Unity presets)
     try:
-        bpy.ops.object.smplx_export_fbx(
-            filepath=out_path,
-            target_format='UNITY'
-        )
-        print(f"[export] Used smplx_export_fbx (Unity format) -> {out_path}")
-        return
-    except AttributeError:
-        print("[export] smplx_export_fbx not available, using standard FBX export")
+        # Check if operator exists and context is correct
+        if hasattr(bpy.ops.object, 'smplx_export_fbx'):
+            # The operator might need specific context
+            bpy.ops.object.smplx_export_fbx(
+                filepath=out_path,
+                target_format='UNITY'
+            )
+            print(f"[export] Used smplx_export_fbx (Unity format) -> {out_path}")
+            return
+        else:
+            print("[export] smplx_export_fbx not available, using standard FBX export")
+    except RuntimeError as e:
+        # poll() failed - context is incorrect
+        print(f"[export] smplx_export_fbx context error: {e}, using standard FBX export")
     except Exception as e:
         print(f"[export] smplx_export_fbx failed: {e}, using standard FBX export")
     
     # Fallback: standard FBX export with Unity settings
-    # We already converted SMPL (Y-up) to Blender bone space (Z-up) in code
-    # Export with Blender's native axes, no additional transform
+    # Our rotations are in SMPL world space (Y-up)
+    # Let FBX exporter convert to Unity coordinate system
     bpy.ops.export_scene.fbx(
         filepath=out_path,
         use_selection=True,
         apply_unit_scale=True,
         apply_scale_options='FBX_SCALE_ALL',
-        bake_space_transform=False,  # Don't add extra rotation, we already converted
+        bake_space_transform=True,  # Let exporter handle coordinate conversion
         object_types={'ARMATURE', 'MESH'},
         use_mesh_modifiers=True,
         mesh_smooth_type='FACE',
@@ -343,8 +355,8 @@ def export_fbx_for_unity(arm_obj, out_path: str):
         path_mode='AUTO',
         embed_textures=False,
         batch_mode='OFF',
-        axis_forward='Y',   # Blender Y-forward (native)
-        axis_up='Z'         # Blender Z-up (native)
+        axis_forward='-Z',  # Unity forward
+        axis_up='Y'         # Unity up
     )
     print(f"[export] Standard FBX export (Unity compatible) -> {out_path}")
 
