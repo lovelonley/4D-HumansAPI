@@ -188,17 +188,19 @@ class FourDHumansPipeline:
         if progress_callback:
             progress_callback(10)
         
+        # 从视频路径提取文件名（PHALP 会自动使用视频文件名作为输出）
+        video_name = Path(video_path).stem
+        
         # 输出路径
-        output_pkl = self.output_dir / "results" / f"demo_{task_id}.pkl"
+        output_pkl = self.output_dir / "results" / f"demo_{video_name}.pkl"
         output_pkl.parent.mkdir(parents=True, exist_ok=True)
         
-        # 构建命令
+        # 构建命令（不使用 video.seq 参数，PHALP 会自动从视频文件名提取）
         cmd = [
             sys.executable,  # 使用当前 Python
             str(self.track_script),
             f"video.source={video_path}",
-            f"video.output_dir={self.output_dir}",
-            f"video.seq={task_id}"
+            f"video.output_dir={self.output_dir}"
         ]
         
         result = self._run_command(
