@@ -90,8 +90,19 @@ def mat3_to_quat(M: np.ndarray):
     return m.to_quaternion()
 
 
-# Coordinate system conversion: SMPL (Y-up) -> Blender (Z-up)
-# Rotate 90 degrees around X axis: Y-up becomes Z-up
+# Coordinate system conversions:
+# 1. PHALP outputs rotations in camera coordinate system (Y-down, image coordinates)
+# 2. We need world coordinate system (Y-up, standard SMPL)
+# 3. Then convert to Blender coordinate system (Z-up)
+
+# Camera (Y-down) -> World (Y-up): 180° rotation around X axis
+R_CAM_TO_WORLD = np.array([
+    [1.0,  0.0,  0.0],
+    [0.0, -1.0,  0.0],
+    [0.0,  0.0, -1.0]
+], dtype=np.float64)
+
+# World SMPL (Y-up) -> Blender (Z-up): 90° rotation around X axis
 R_SMPL_TO_BLENDER = np.array([
     [1.0,  0.0,  0.0],
     [0.0,  0.0, -1.0],
@@ -221,13 +232,12 @@ def bake_animation(
         if 'pelvis' in pbones:
             Mr = R_root[f]
             
-            # SMPL coordinate system: X right, Y up, Z forward
-            # SMPL-X addon bone local matrix has Y-up → Z-up conversion built-in
-            # We need to convert SMPL rotation to bone's local space
-            # Bone local matrix: Y→-Z, Z→Y (90deg rotation around X)
+            # Step 1: Convert from PHALP camera coordinate system to world coordinate system
+            # PHALP uses camera/image coordinates (Y-down), we need world coordinates (Y-up)
+            Mr_world = R_CAM_TO_WORLD @ Mr @ R_CAM_TO_WORLD.T
             
-            # Apply the same conversion as the bone's rest pose
-            Mr_converted = R_SMPL_TO_BLENDER @ Mr @ R_SMPL_TO_BLENDER.T
+            # Step 2: Convert from SMPL world (Y-up) to Blender (Z-up)
+            Mr_converted = R_SMPL_TO_BLENDER @ Mr_world @ R_SMPL_TO_BLENDER.T
             
             q = mat3_to_quat(Mr_converted)
             pb = pbones['pelvis']
@@ -257,9 +267,12 @@ def bake_animation(
             if joint_name not in pbones:
                 continue  # Skip if bone doesn't exist in armature
             
-            # Convert SMPL rotation to bone's local space (same as root)
+            # Convert body joint rotation (same two-step process as root)
             M = R_body[f, idx]
-            M_converted = R_SMPL_TO_BLENDER @ M @ R_SMPL_TO_BLENDER.T
+            # Step 1: Camera to world
+            M_world = R_CAM_TO_WORLD @ M @ R_CAM_TO_WORLD.T
+            # Step 2: SMPL to Blender
+            M_converted = R_SMPL_TO_BLENDER @ M_world @ R_SMPL_TO_BLENDER.T
             q = mat3_to_quat(M_converted)
             
             pb = pbones[joint_name]
