@@ -268,31 +268,18 @@ def main_blender(args):
         print(f"[blender] Error importing animation: {e}")
         raise
     
-    # Find the created mesh and armature
+    # Find the created mesh
     mesh_obj = None
-    arm_obj = None
     for obj in bpy.data.objects:
         if obj.type == 'MESH' and 'SMPLX' in obj.name:
             mesh_obj = obj
-        elif obj.type == 'ARMATURE' and 'SMPLX' in obj.name:
-            arm_obj = obj
+            break
     
     if mesh_obj is None:
         raise RuntimeError("Failed to find SMPL-X mesh after animation import")
-    if arm_obj is None:
-        raise RuntimeError("Failed to find SMPL-X armature after animation import")
     
-    print(f"[blender] Found mesh: {mesh_obj.name}")
-    print(f"[blender] Found armature: {arm_obj.name}")
-    
-    # Delete the mesh - we only want skeleton and animation for Unity
-    print(f"[blender] Removing mesh (keeping only skeleton and animation)...")
-    bpy.data.objects.remove(mesh_obj, do_unlink=True)
-    
-    # Set armature as active for export
-    bpy.context.view_layer.objects.active = arm_obj
-    arm_obj.select_set(True)
-    print(f"[blender] Active object: {arm_obj.name}")
+    bpy.context.view_layer.objects.active = mesh_obj
+    print(f"[blender] Active mesh: {mesh_obj.name}")
     
     # Export FBX using addon's export
     print(f"\n[blender] Exporting FBX to: {args.out}")
