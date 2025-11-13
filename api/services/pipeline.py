@@ -59,9 +59,10 @@ class FourDHumansPipeline:
         self.smooth_script = self.project_root / "tools" / "adapt_smoothnet.py"
         # Use official SMPL-X addon based script for better quality
         self.fbx_script = self.project_root / "tools" / "blender" / "smplx_npz_to_fbx.py"
+        self.mesh_removal_script = self.project_root / "tools" / "blender" / "remove_mesh_from_fbx.py"
         
         # 验证脚本存在
-        for script in [self.track_script, self.extract_script, self.smooth_script, self.fbx_script]:
+        for script in [self.track_script, self.extract_script, self.smooth_script, self.fbx_script, self.mesh_removal_script]:
             if not script.exists():
                 raise ValueError(f"Required script not found: {script}")
     
@@ -407,12 +408,83 @@ class FourDHumansPipeline:
         
         if result.success:
             if output_fbx.exists():
-                result.output_path = str(output_fbx)
-                if progress_callback:
-                    progress_callback(95)
+                # Remove mesh from FBX to reduce file size
+                mesh_removal_result = self._remove_mesh_from_fbx(
+                    output_fbx, 
+                    task_id, 
+                    progress_callback
+                )
+                
+                if mesh_removal_result.success:
+                    result.output_path = mesh_removal_result.output_path
+                    if progress_callback:
+                        progress_callback(95)
+                else:
+                    # Mesh removal failed, but keep original FBX
+                    logger.warning(f"Mesh removal failed, using original FBX: {mesh_removal_result.error}")
+                    result.output_path = str(output_fbx)
+                    if progress_callback:
+                        progress_callback(95)
             else:
                 result.success = False
                 result.error = f"FBX output file not found: {output_fbx}"
+                result.error_code = ErrorCode.FBX_EXPORT_FAILED
+        
+        return result
+    
+    def _remove_mesh_from_fbx(
+        self,
+        input_fbx: Path,
+        task_id: str,
+        progress_callback: Optional[Callable[[int], None]] = None
+    ) -> PipelineResult:
+        """
+        Remove mesh from FBX file (keep skeleton and animation only)
+        
+        Args:
+            input_fbx: Input FBX file path (with mesh)
+            task_id: Task ID for output naming
+            progress_callback: Optional progress callback
+            
+        Returns:
+            PipelineResult with output_path pointing to mesh-free FBX
+        """
+        logger.info(f"Removing mesh from FBX: {input_fbx}")
+        
+        # Output path (replace original file)
+        output_fbx = input_fbx.parent / f"{task_id}_no_mesh.fbx"
+        
+        # Build command
+        cmd = [
+            settings.BLENDER_PATH,
+            "-b",  # Background mode
+            "-P", str(self.mesh_removal_script),
+            "--",
+            "--input", str(input_fbx),
+            "--output", str(output_fbx)
+        ]
+        
+        result = self._run_command(
+            cmd=cmd,
+            timeout=settings.FBX_EXPORT_TIMEOUT,  # Reuse FBX export timeout
+            step_name=ProcessStep.FBX_EXPORT,  # Part of FBX export step
+            cwd=self.project_root
+        )
+        
+        if result.success:
+            if output_fbx.exists():
+                result.output_path = str(output_fbx)
+                logger.info(f"Mesh removed successfully: {output_fbx}")
+                
+                # Delete original FBX with mesh to save space
+                try:
+                    input_fbx.unlink()
+                    logger.info(f"Deleted original FBX with mesh: {input_fbx}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete original FBX: {e}")
+            else:
+                result.success = False
+                result.error = f"Mesh-free FBX output file not found: {output_fbx}"
                 result.error_code = ErrorCode.FBX_EXPORT_FAILED
         
         return result
