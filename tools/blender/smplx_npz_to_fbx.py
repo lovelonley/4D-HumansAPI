@@ -131,11 +131,11 @@ def convert_to_amass_format(npz_path: str, output_path: str, gender: str, fps: i
     
     print(f"[convert] Converting rotation matrices to Rodrigues vectors...")
     print(f"[convert] NOTE: Input data is in Y-down coordinate system (PHALP/OpenCV)")
-    print(f"[convert] Addon will apply coordinate system correction for AMASS format")
+    print(f"[convert] Using SMPL-X format (no coordinate conversion by addon)")
     
     # IMPORTANT: Our NPZ data is in Y-down coordinate system (PHALP output)
-    # AMASS format expects Y-up coordinate system
-    # We need to apply 180° X-axis rotation to flip Y-down → Y-up
+    # PHALP renders with 180° X-axis rotation to display correctly
+    # We apply the same transformation here
     R_FLIP_Y = np.array([
         [1.0,  0.0,  0.0],
         [0.0, -1.0,  0.0],
@@ -146,7 +146,7 @@ def convert_to_amass_format(npz_path: str, output_path: str, gender: str, fps: i
     poses = np.zeros((T, 55, 3), dtype=np.float64)
     
     for t in range(T):
-        # Root (pelvis) - apply Y-down to Y-up conversion
+        # Root (pelvis) - apply Y-down to Y-up conversion (same as PHALP renderer)
         R_root_corrected = R_FLIP_Y @ R_root[t] @ R_FLIP_Y.T
         poses[t, 0] = rotmat_to_rodrigues(R_root_corrected)
         
@@ -162,10 +162,12 @@ def convert_to_amass_format(npz_path: str, output_path: str, gender: str, fps: i
     # Flatten poses to (T, 165)
     poses_flat = poses.reshape(T, -1)
     
-    # Also flip translation Y and Z to match coordinate system
+    # Translation: convert from camera coordinates to world coordinates
+    # Camera: X-right, Y-down, Z-forward
+    # World (Y-up): X-right, Y-up, Z-forward
     trans_corrected = trans.copy()
-    trans_corrected[:, 1] = -trans[:, 1]  # Flip Y
-    trans_corrected[:, 2] = -trans[:, 2]  # Flip Z
+    trans_corrected[:, 1] = -trans[:, 1]  # Flip Y (down → up)
+    trans_corrected[:, 2] = -trans[:, 2]  # Flip Z (forward in camera → backward in world)
     
     # Create AMASS format NPZ
     amass_data = {
@@ -237,19 +239,19 @@ def main_blender(args):
     print(f"\n[blender] Importing animation using SMPL-X addon...")
     print(f"[blender] Gender: {args.gender}")
     print(f"[blender] FPS: {args.fps}")
-    print(f"[blender] Format: AMASS (Y-up)")
+    print(f"[blender] Format: SMPL-X (Y-up, no additional rotation)")
     
     # Set addon properties
     bpy.context.window_manager.smplx_tool.smplx_version = "locked_head"
     bpy.context.window_manager.smplx_tool.smplx_gender = args.gender
     
     # Import animation
-    # Note: We need to use the operator with file selection
-    # Since we can't use the file browser in background mode, we'll call it directly
+    # Use SMPL-X format (not AMASS) to avoid additional -90° X-axis rotation
+    # Our data is already Y-up after applying the 180° flip
     try:
         bpy.ops.object.smplx_add_animation(
             filepath=str(amass_npz),
-            anim_format="AMASS",
+            anim_format="SMPL-X",  # Changed from "AMASS" to avoid extra rotation
             rest_position="SMPL-X",  # Use default rest position
             hand_reference="FLAT",
             keyframe_corrective_pose_weights=False,
