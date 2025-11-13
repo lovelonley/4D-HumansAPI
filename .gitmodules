@@ -1,0 +1,8 @@
+[submodule "phalp"]
+	path = phalp
+	url = https://github.com/brjathu/PHALP.git
+	branch = master
+[submodule "smoothnet"]
+	path = smoothnet
+	url = https://github.com/cure-lab/SmoothNet.git
+	branch = main

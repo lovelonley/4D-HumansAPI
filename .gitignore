@@ -71,3 +71,19 @@ Desktop.ini
 
 # 保留示例文件
 !example_data/
+
+# Runtime directories
+uploads/
+results/
+outputs/
+tmp/
+logs/
+demo_out/
+
+# Backup directories
+*.backup/
+PHALP.backup/
+SmoothNet.backup/
+
+# Submodule commits record
+.submodule-commits.txt

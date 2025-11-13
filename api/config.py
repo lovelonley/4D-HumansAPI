@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     BLENDER_PATH: str = ""
     
     # SmoothNet 检查点路径（必需）
-    SMOOTHNET_CHECKPOINT: str = "SmoothNet/data/checkpoints/pw3d_spin_3D/checkpoint_8.pth.tar"
+    SMOOTHNET_CHECKPOINT: str = "smoothnet/data/checkpoints/pw3d_spin_3D/checkpoint_8.pth.tar"
     
     # ============================================================
     # 业务配置

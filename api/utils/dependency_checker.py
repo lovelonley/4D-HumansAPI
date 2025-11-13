@@ -144,7 +144,7 @@ class DependencyChecker:
         # 2. 尝试导入 SmoothNet 模块
         try:
             # 添加 SmoothNet 到 Python 路径
-            smoothnet_dir = Path(settings.PROJECT_ROOT) / "SmoothNet"
+            smoothnet_dir = Path(settings.PROJECT_ROOT) / "smoothnet"
             if smoothnet_dir not in sys.path:
                 sys.path.insert(0, str(smoothnet_dir))
             

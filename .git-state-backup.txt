@@ -1,0 +1,42 @@
+Git State Backup - 2025-11-13 15:41:15
+=====================================
+
+Main Repository:
+- Branch: main
+- Latest commit: 520a36841b256ae8dc23aa3ccd04a677efc0f61e
+- Short commit: 520a368
+- Ahead of origin/main: 63 commits
+
+PHALP:
+- Commit: 677074a9bd7acac58c0b98a31b04ae54b93dcd2f
+- Short: 677074a
+- Branch: master
+- Remote: https://github.com/brjathu/PHALP.git
+- Status: Untracked in main repo (independent Git repo)
+
+SmoothNet:
+- Commit: c03e93e8a14f55b9aa087dced2751a7a5e2d50b0
+- Short: c03e93e
+- Branch: main
+- Remote: https://github.com/cure-lab/SmoothNet.git
+- Status: Untracked in main repo (independent Git repo)
+
+Current untracked files:
+- PHALP/
+- SmoothNet/
+- ARCHITECTURE_REVIEW.md
+- DEPENDENCY_MANAGEMENT_PLAN.md
+- FIX_PLANS.md
+- PROJECT_REVIEW.md
+- QUICK_START_DEPENDENCY.md
+- demo_out/
+- monitor_tasks.sh
+- tools/analyze_fbx.py
+- tools/blender/test_smplx_coordinate_system.py
+
+Backup branch: backup-before-git-optimization-20251113-154106
+
+To restore:
+1. git checkout backup-before-git-optimization-20251113-154106
+2. Remove .gitmodules if exists
+3. Restore PHALP and SmoothNet as independent repos
