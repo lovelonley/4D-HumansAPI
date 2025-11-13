@@ -96,6 +96,21 @@ def main():
     # Set first armature as active
     bpy.context.view_layer.objects.active = armature_objects[0]
     
+    # Get actual animation frame range from the armature action
+    arm_obj = armature_objects[0]
+    if arm_obj.animation_data and arm_obj.animation_data.action:
+        action = arm_obj.animation_data.action
+        frame_start, frame_end = action.frame_range
+        print(f"\n  Animation frame range: {frame_start:.0f} - {frame_end:.0f}")
+        
+        # Set scene frame range to match animation
+        # This is CRITICAL - without this, Blender will use default frame_end (250)
+        bpy.context.scene.frame_start = int(frame_start)
+        bpy.context.scene.frame_end = int(frame_end)
+        print(f"  Set scene.frame_end = {int(frame_end)}")
+    else:
+        print("\n  Warning: No animation data found on armature")
+    
     # Export FBX
     output_path.parent.mkdir(parents=True, exist_ok=True)
     bpy.ops.export_scene.fbx(
