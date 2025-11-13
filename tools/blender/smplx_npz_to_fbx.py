@@ -161,7 +161,7 @@ print("[coord]   Step 3: FBX export (Z-up → Y-up Unity)")
 
 def create_smplx_character_with_shape(gender: str = "female", betas: np.ndarray | None = None) -> tuple:
     """
-    Create SMPL-X character using official Meshcapade addon and apply body shape (betas).
+    Create SMPL-X character by directly loading from addon's data folder.
     
     Args:
         gender: Body gender ("female", "male", or "neutral")
@@ -171,22 +171,44 @@ def create_smplx_character_with_shape(gender: str = "female", betas: np.ndarray 
         (armature_object, mesh_object) tuple
     """
     import bpy
+    import os
+    import addon_utils
     
     # Clean scene
     bpy.ops.object.select_all(action='SELECT')
     if bpy.context.selected_objects:
         bpy.ops.object.delete()
 
-    # Set gender and SMPL version in window manager properties (addon reads from here)
-    # Based on properties.py: WindowManager.smpl_tool (not smplx_tool)
-    bpy.context.window_manager.smpl_tool.gender = gender
-    bpy.context.window_manager.smpl_tool.SMPL_version = "SMPLX"
+    # Find addon path
+    addon_name = "meshcapade_addon"
+    for mod in addon_utils.modules():
+        if mod.__name__ == addon_name:
+            addon_path = os.path.dirname(mod.__file__)
+            break
+    else:
+        raise RuntimeError(f"Cannot find {addon_name} path")
     
-    # Create SMPL-X character using the official addon operator
-    # Based on operators.py:254 - OP_CreateAvatar with bl_idname "scene.create_avatar"
-    bpy.ops.scene.create_avatar()
+    # Load SMPL-X model from addon's data folder
+    blend_file = os.path.join(addon_path, "data", "smplx.blend")
+    object_name = f"SMPLX-mesh-{gender}"
+    objects_path = os.path.join(blend_file, "Object")
     
-    # Find armature and mesh (addon creates both)
+    print(f"[smplx] Loading model from: {blend_file}")
+    print(f"[smplx] Object: {object_name}")
+    
+    # Use bpy.data.libraries.load instead of bpy.ops.wm.append for better control
+    with bpy.data.libraries.load(blend_file, link=False) as (data_from, data_to):
+        if object_name in data_from.objects:
+            data_to.objects = [object_name]
+        else:
+            raise RuntimeError(f"Object {object_name} not found in {blend_file}")
+    
+    # Link loaded objects to scene
+    for obj in data_to.objects:
+        if obj is not None:
+            bpy.context.collection.objects.link(obj)
+    
+    # Find armature and mesh
     arm = None
     mesh = None
     for obj in bpy.data.objects:
@@ -195,10 +217,15 @@ def create_smplx_character_with_shape(gender: str = "female", betas: np.ndarray 
         elif obj.type == 'MESH':
             mesh = obj
     
-    if arm is None:
-        raise RuntimeError("SMPL-X armature not created by addon")
+    if arm is None or mesh is None:
+        raise RuntimeError("SMPL-X armature or mesh not loaded")
     
-    print(f"[smplx] Created armature: {arm.name}")
+    # Set properties on the mesh (same as addon does)
+    mesh['gender'] = gender
+    mesh['SMPL_version'] = "SMPLX"
+    bpy.context.view_layer.objects.active = mesh
+    
+    print(f"[smplx] Loaded armature: {arm.name}, mesh: {mesh.name}")
     
     # Apply body shape (betas) if provided
     if betas is not None and mesh is not None:
