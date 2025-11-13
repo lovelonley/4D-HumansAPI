@@ -3,25 +3,35 @@
 ## 当前 Submodules
 
 - **phalp**: PHALP 追踪库
+  - Path: `phalp/`
   - Commit: 677074a9bd7acac58c0b98a31b04ae54b93dcd2f
   - Branch: master
   - URL: https://github.com/brjathu/PHALP.git
 
 - **smoothnet**: SmoothNet 平滑库
+  - Path: `smoothnet/`
   - Commit: c03e93e8a14f55b9aa087dced2751a7a5e2d50b0
   - Branch: main
   - URL: https://github.com/cure-lab/SmoothNet.git
 
+**注意**：目录名使用小写（`phalp/`、`smoothnet/`），与代码中的导入路径一致。
+
 ## 克隆项目（包含 submodules）
 
 ```bash
-git clone --recursive https://github.com/your-repo/4D-Humans.git
+git clone --recursive https://github.com/lovelonley/4D-HumansAPI.git
+```
+
+或者如果使用原始仓库：
+
+```bash
+git clone --recursive https://github.com/shubham-goel/4D-Humans.git
 ```
 
 或者分步：
 
 ```bash
-git clone https://github.com/your-repo/4D-Humans.git
+git clone https://github.com/lovelonley/4D-HumansAPI.git
 cd 4D-Humans
 git submodule update --init --recursive
 ```

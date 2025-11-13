@@ -71,10 +71,15 @@ ssh $SSH_HOST "curl http://localhost:8000/health"
 
 ## 注意事项
 
-1. **Submodules**: 确保远程服务器可以访问 GitHub（用于拉取 submodules）
+1. **Submodules**: 
+   - PHALP 和 SmoothNet 已配置为 Git Submodules
+   - 确保远程服务器可以访问 GitHub（用于拉取 submodules）
+   - 目录名使用小写：`phalp/`、`smoothnet/`
 2. **权限**: 某些操作可能需要 sudo 权限
 3. **服务管理**: 根据你的部署方式调整服务重启命令
 4. **环境变量**: 确保远程服务器有正确的环境变量配置
+   - `SMOOTHNET_CHECKPOINT=smoothnet/data/checkpoints/pw3d_spin_3D/checkpoint_8.pth.tar`
+5. **文件管理**: 部署后会自动清理旧文件（配置在 `.env` 中）
 
 ## 故障排除
 

@@ -26,7 +26,7 @@ vim .env
 
 ```bash
 # SmoothNet 检查点（必需）
-SMOOTHNET_CHECKPOINT=SmoothNet/data/checkpoints/pw3d_spin_3D/checkpoint_8.pth.tar
+SMOOTHNET_CHECKPOINT=smoothnet/data/checkpoints/pw3d_spin_3D/checkpoint_8.pth.tar
 
 # Blender 路径（如果不在 PATH 中）
 BLENDER_PATH=/Applications/Blender.app/Contents/MacOS/blender
@@ -192,8 +192,13 @@ curl http://localhost:8000/api/v1/admin/queue
 
 1. **视频限制**：最大 500MB，30 秒，2K 分辨率
 2. **队列管理**：单队列，一次处理一个任务
-3. **文件清理**：完成/失败的任务保留 3 天后自动清理
+3. **文件清理**：
+   - API 任务文件：3 天后自动清理
+   - 演示文件：30 天后自动清理
+   - 测试文件：7 天后自动清理
+   - 日志文件：7 天后自动清理
 4. **GPU 要求**：推荐至少 8GB 显存
+5. **文件命名**：所有文件统一使用 `task_id` 命名
 
 ## 🆘 获取帮助
 

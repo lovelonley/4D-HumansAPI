@@ -143,9 +143,15 @@
 
 ### 4. 文件管理
 - **上传**: `uploads/{task_id}.{ext}`
-- **中间**: `tmp/{task_id}_*.npz`
-- **输出**: `results/{task_id}.fbx`
-- **清理**: 定时任务 + 手动触发
+- **追踪**: `outputs/results/{task_id}.pkl`（统一使用 task_id 命名）
+- **中间**: `tmp/{task_id}_tid{track_id}_*.npz`
+- **输出**: `results/{task_id}_tid{track_id}_*.fbx`
+- **清理**: 
+  - API 任务文件：3天自动清理
+  - 演示文件：30天自动清理
+  - 测试文件：7天自动清理
+  - 日志文件：7天自动清理
+  - 支持手动清理接口
 
 ## 📦 代码统计
 
@@ -218,9 +224,10 @@ api/
 ## 🐛 已知限制
 
 1. **单队列**: 一次只能处理一个任务，适合单 GPU 环境
-2. **无认证**: 生产环境建议添加 API Key 或 OAuth
+2. **无认证**: 生产环境建议添加 API Key 或 OAuth（见 [PROJECT_OPTIMIZATION_ROADMAP.md](PROJECT_OPTIMIZATION_ROADMAP.md)）
 3. **无重试**: 任务失败需要手动重新提交
 4. **本地存储**: 文件存储在本地，不支持分布式
+5. **CORS 配置**: 当前允许所有域名访问（生产环境应限制）
 
 ## 💡 未来改进方向
 

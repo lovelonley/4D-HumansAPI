@@ -39,9 +39,14 @@ python demo.py \
 ```
 
 ## Run tracking demo on videos
-Our tracker builds on PHALP, please install that first:
+Our tracker builds on PHALP, which is included as a Git submodule. When cloning the repository, make sure to initialize submodules:
+
 ```bash
-pip install git+https://github.com/brjathu/PHALP.git
+# Clone with submodules
+git clone --recursive https://github.com/shubham-goel/4D-Humans.git
+
+# Or if already cloned, initialize submodules
+git submodule update --init --recursive
 ```
 
 Now, run `track.py` to reconstruct and track humans in any video. Input video source may be a video file, a folder of frames, or a youtube link:

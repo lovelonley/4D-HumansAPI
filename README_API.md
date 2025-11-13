@@ -54,7 +54,7 @@ cp deploy/env.example .env
 BLENDER_PATH=/Applications/Blender.app/Contents/MacOS/blender
 
 # SmoothNet 检查点路径（必需）
-SMOOTHNET_CHECKPOINT=SmoothNet/data/checkpoints/pw3d_spin_3D/checkpoint_8.pth.tar
+SMOOTHNET_CHECKPOINT=smoothnet/data/checkpoints/pw3d_spin_3D/checkpoint_8.pth.tar
 
 # 视频限制
 MAX_VIDEO_DURATION=30          # 30秒
@@ -199,6 +199,19 @@ GET /api/v1/admin/queue
 POST /api/v1/admin/cleanup
 ```
 
+**响应**：
+
+```json
+{
+  "message": "Cleaned up 5 items",
+  "cleaned_tasks": 2,
+  "cleaned_demo_files": 1,
+  "cleaned_test_files": 1,
+  "cleaned_log_files": 1,
+  "total_cleaned": 5
+}
+```
+
 ## 🔧 配置说明
 
 ### 视频限制
@@ -218,20 +231,28 @@ MAX_QUEUE_SIZE=10              # 最大队列长度
 ### 超时配置
 
 ```bash
-TASK_TIMEOUT=600               # 总超时（10分钟）
-TRACKING_TIMEOUT=300           # 追踪超时（5分钟）
-EXTRACTION_TIMEOUT=30          # 提取超时（30秒）
-SMOOTHING_TIMEOUT=60           # 平滑超时（1分钟）
-FBX_EXPORT_TIMEOUT=60          # 导出超时（1分钟）
+TASK_TIMEOUT=1200              # 总超时（20分钟）
+TRACKING_TIMEOUT=900           # 追踪超时（15分钟）
+EXTRACTION_TIMEOUT=60          # 提取超时（1分钟）
+SMOOTHING_TIMEOUT=120          # 平滑超时（2分钟）
+FBX_EXPORT_TIMEOUT=120         # 导出超时（2分钟）
 ```
 
 ### 清理配置
 
 ```bash
+# API 任务文件清理
 AUTO_CLEANUP_ENABLED=true
 CLEANUP_INTERVAL_HOURS=6       # 每6小时清理一次
 CLEANUP_COMPLETED_HOURS=72     # 完成任务保留3天
 CLEANUP_FAILED_HOURS=72        # 失败任务保留3天
+
+# 开发/演示文件清理
+CLEANUP_DEMO_FILES_ENABLED=true
+CLEANUP_DEMO_FILES_DAYS=30     # 演示文件保留30天
+CLEANUP_TEST_FILES_ENABLED=true
+CLEANUP_TEST_FILES_DAYS=7      # 测试文件保留7天
+CLEANUP_LOG_FILES_DAYS=7       # 日志文件保留7天
 ```
 
 ### SmoothNet 配置
@@ -331,27 +352,37 @@ server {
 ### 项目结构
 
 ```
-api/
-├── __init__.py
-├── main.py                 # FastAPI 主应用
-├── config.py               # 配置管理
-├── constants.py            # 常量定义
-├── models/                 # 数据模型
-│   ├── task.py
-│   └── error.py
-├── routers/                # API 路由
-│   ├── mocap.py
-│   └── admin.py
-├── services/               # 业务逻辑
-│   ├── pipeline.py         # 4D-Humans Pipeline
-│   ├── task_manager.py     # 任务管理
-│   └── worker.py           # 后台工作器
-└── utils/                  # 工具函数
-    ├── logger.py
-    ├── file_handler.py
-    ├── gpu_monitor.py
-    ├── video_validator.py
-    └── dependency_checker.py
+4D-Humans/
+├── api/                    # FastAPI 应用
+│   ├── __init__.py
+│   ├── main.py             # FastAPI 主应用
+│   ├── config.py           # 配置管理
+│   ├── constants.py        # 常量定义
+│   ├── models/             # 数据模型
+│   │   ├── task.py
+│   │   └── error.py
+│   ├── routers/            # API 路由
+│   │   ├── mocap.py        # MoCap API
+│   │   └── admin.py        # 管理 API
+│   ├── services/           # 业务逻辑
+│   │   ├── pipeline.py     # 4D-Humans Pipeline
+│   │   ├── task_manager.py # 任务管理（含清理机制）
+│   │   └── worker.py       # 后台工作器
+│   └── utils/              # 工具函数
+│       ├── logger.py
+│       ├── file_handler.py
+│       ├── gpu_monitor.py
+│       ├── video_validator.py
+│       └── dependency_checker.py
+├── phalp/                  # PHALP submodule
+├── smoothnet/              # SmoothNet submodule
+├── hmr2/                   # HMR2 模型代码
+├── tools/                   # 工具脚本
+├── scripts/                 # 辅助脚本
+│   ├── start_api.sh
+│   ├── test_api.py
+│   └── cleanup_old_files.sh
+└── deploy/                  # 部署配置
 ```
 
 ### 添加新功能
