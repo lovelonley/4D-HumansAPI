@@ -396,8 +396,7 @@ class FourDHumansPipeline:
             "--fps", str(fps)
         ]
         
-        if with_root_motion:
-            cmd.append("--with-root-motion")
+        # Note: --with-root-motion removed, motion analysis now built-in
         
         result = self._run_command(
             cmd=cmd,
