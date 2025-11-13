@@ -428,6 +428,21 @@ def export_fbx_for_unity(arm_obj, out_path: str):
 def main_blender(args):
     ensure_blender()
     
+    # Ensure SMPL-X addon is enabled
+    import bpy
+    import addon_utils
+    addon_name = "meshcapade_addon"
+    loaded_default, loaded_state = addon_utils.check(addon_name)
+    if not loaded_state:
+        addon_utils.enable(addon_name, default_set=True)
+        print(f"[addon] Enabled {addon_name}")
+    else:
+        print(f"[addon] {addon_name} already enabled")
+    
+    # Verify the operator is available
+    if not hasattr(bpy.ops.object, 'update_joint_locations'):
+        raise RuntimeError("SMPL-X addon not properly loaded: update_joint_locations operator not found")
+    
     # Load NPZ data
     data = load_npz(args.npz)
     R_root = data['R_root']
