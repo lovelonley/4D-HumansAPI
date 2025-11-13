@@ -130,30 +130,25 @@ def convert_to_amass_format(npz_path: str, output_path: str, gender: str, fps: i
         betas = np.zeros(10, dtype=np.float64)
     
     print(f"[convert] Converting rotation matrices to Rodrigues vectors...")
-    print(f"[convert] NOTE: Input data is in Y-down coordinate system (PHALP/OpenCV)")
-    print(f"[convert] Using SMPL-X format (no coordinate conversion by addon)")
+    print(f"[convert] NOTE: Rotation matrices are in SMPL model space (already correct)")
+    print(f"[convert] Only converting translation from camera to world coordinates")
     
-    # IMPORTANT: Our NPZ data is in Y-down coordinate system (PHALP output)
-    # PHALP renders with 180° X-axis rotation to display correctly
-    # We apply the same transformation here
-    R_FLIP_Y = np.array([
-        [1.0,  0.0,  0.0],
-        [0.0, -1.0,  0.0],
-        [0.0,  0.0, -1.0]
-    ], dtype=np.float64)
+    # IMPORTANT INSIGHT:
+    # - PHALP's rotation matrices are already in correct SMPL model space
+    # - PHALP applies 180° rotation to MESH VERTICES for rendering (not to rotations)
+    # - We should NOT transform the rotation matrices
+    # - We only need to convert translation from camera coords to world coords
     
-    # Convert rotation matrices to Rodrigues vectors
+    # Convert rotation matrices to Rodrigues vectors (NO transformation needed)
     poses = np.zeros((T, 55, 3), dtype=np.float64)
     
     for t in range(T):
-        # Root (pelvis) - apply Y-down to Y-up conversion (same as PHALP renderer)
-        R_root_corrected = R_FLIP_Y @ R_root[t] @ R_FLIP_Y.T
-        poses[t, 0] = rotmat_to_rodrigues(R_root_corrected)
+        # Root (pelvis) - direct conversion, no coordinate transformation
+        poses[t, 0] = rotmat_to_rodrigues(R_root[t])
         
         # Body joints (23 joints: left_hip to right_thumb3)
         for j in range(23):
-            R_body_corrected = R_FLIP_Y @ R_body[t, j] @ R_FLIP_Y.T
-            poses[t, j + 1] = rotmat_to_rodrigues(R_body_corrected)
+            poses[t, j + 1] = rotmat_to_rodrigues(R_body[t, j])
         
         # Remaining joints (jaw, eyes, hands) - set to zero
         # joints 24-54 (jaw=24, eyes=25-26, hands=27-54)
@@ -162,12 +157,9 @@ def convert_to_amass_format(npz_path: str, output_path: str, gender: str, fps: i
     # Flatten poses to (T, 165)
     poses_flat = poses.reshape(T, -1)
     
-    # Translation: convert from camera coordinates to world coordinates
-    # Camera: X-right, Y-down, Z-forward
-    # World (Y-up): X-right, Y-up, Z-forward
+    # Translation: keep as-is (camera translation is already in correct space)
+    # The addon will handle any necessary coordinate conversions
     trans_corrected = trans.copy()
-    trans_corrected[:, 1] = -trans[:, 1]  # Flip Y (down → up)
-    trans_corrected[:, 2] = -trans[:, 2]  # Flip Z (forward in camera → backward in world)
     
     # Create AMASS format NPZ
     amass_data = {
