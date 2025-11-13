@@ -190,18 +190,30 @@ def create_smplx_character_with_shape(gender: str = "female", betas: np.ndarray 
     
     # Load SMPL-X model from addon's data folder
     blend_file = os.path.join(addon_path, "data", "smplx.blend")
+    
+    # Verify file exists
+    if not os.path.exists(blend_file):
+        raise RuntimeError(f"SMPL-X model file not found: {blend_file}")
+    
+    # Use absolute path
+    blend_file = os.path.abspath(blend_file)
     object_name = f"SMPLX-mesh-{gender}"
-    objects_path = os.path.join(blend_file, "Object")
     
     print(f"[smplx] Loading model from: {blend_file}")
     print(f"[smplx] Object: {object_name}")
+    print(f"[smplx] File exists: {os.path.exists(blend_file)}")
     
-    # Use bpy.data.libraries.load instead of bpy.ops.wm.append for better control
-    with bpy.data.libraries.load(blend_file, link=False) as (data_from, data_to):
-        if object_name in data_from.objects:
-            data_to.objects = [object_name]
-        else:
-            raise RuntimeError(f"Object {object_name} not found in {blend_file}")
+    # Use bpy.data.libraries.load with absolute path
+    try:
+        with bpy.data.libraries.load(blend_file, link=False) as (data_from, data_to):
+            print(f"[smplx] Available objects: {data_from.objects}")
+            if object_name in data_from.objects:
+                data_to.objects = [object_name]
+            else:
+                raise RuntimeError(f"Object {object_name} not found. Available: {list(data_from.objects)}")
+    except Exception as e:
+        print(f"[smplx] Error loading blend file: {e}")
+        raise
     
     # Link loaded objects to scene
     for obj in data_to.objects:
