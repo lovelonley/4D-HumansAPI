@@ -12,7 +12,7 @@ Run:
     --with-root-motion
 
 Requirements:
-  - Official SMPL-X Blender Addon installed and enabled
+  - Official SMPL-X Blender Addon (Meshcapade) installed and enabled
   - NPZ must contain: R_root, R_body, frame_idx, betas (optional)
 """
 
@@ -33,6 +33,7 @@ def parse_args(argv: List[str]):
     ap.add_argument("--fps", type=int, default=30, help="Frame rate")
     ap.add_argument("--with-root-motion", action="store_true", help="Enable root motion from camera data")
     ap.add_argument("--cam-scale", type=float, default=1.0, help="Scale for camera translation (meters)")
+    ap.add_argument("--gender", default="female", choices=["female", "male", "neutral"], help="Body gender")
     return ap.parse_args(argv)
 
 
@@ -81,64 +82,109 @@ SMPL_BODY_NAMES = [
 ]
 
 
-def mat3_to_quat(M: np.ndarray):
-    """Convert 3x3 rotation matrix to Blender quaternion."""
-    from mathutils import Matrix
-    m = Matrix(((float(M[0,0]), float(M[0,1]), float(M[0,2])),
-                (float(M[1,0]), float(M[1,1]), float(M[1,2])),
-                (float(M[2,0]), float(M[2,1]), float(M[2,2]))))
-    return m.to_quaternion()
+def rotmat_to_rodrigues(R: np.ndarray) -> np.ndarray:
+    """
+    Convert 3x3 rotation matrix to Rodrigues vector (axis-angle representation).
+    
+    Rodrigues vector: rotation_axis * rotation_angle
+    - The direction of the vector is the rotation axis
+    - The magnitude of the vector is the rotation angle in radians
+    
+    This is the format expected by the SMPL-X Blender addon.
+    
+    Implementation based on cv2.Rodrigues formula (no scipy dependency).
+    """
+    # Ensure it's a proper numpy array
+    R = np.array(R, dtype=np.float64)
+    
+    # Calculate rotation angle from trace
+    # trace = 1 + 2*cos(theta)
+    trace = R[0,0] + R[1,1] + R[2,2]
+    theta = np.arccos(np.clip((trace - 1.0) / 2.0, -1.0, 1.0))
+    
+    # Small angle approximation
+    if theta < 1e-8:
+        return np.zeros(3, dtype=np.float64)
+    
+    # Extract rotation axis from skew-symmetric part
+    # For small angles near pi, use different formula
+    if np.abs(theta - np.pi) < 1e-3:
+        # Near 180 degrees - use diagonal elements
+        # Find the largest diagonal element
+        diag = np.array([R[0,0], R[1,1], R[2,2]])
+        k = np.argmax(diag)
+        
+        # Compute axis from the column with largest diagonal
+        axis = np.zeros(3)
+        axis[k] = np.sqrt((R[k, k] + 1.0) / 2.0)
+        
+        for i in range(3):
+            if i != k:
+                axis[i] = R[k, i] / (2.0 * axis[k])
+        
+        axis = axis / np.linalg.norm(axis)
+    else:
+        # Normal case: extract from skew-symmetric part
+        axis = np.array([
+            R[2, 1] - R[1, 2],
+            R[0, 2] - R[2, 0],
+            R[1, 0] - R[0, 1]
+        ], dtype=np.float64)
+        
+        axis = axis / (2.0 * np.sin(theta))
+    
+    # Rodrigues vector = axis * angle
+    rodrigues = axis * theta
+    return rodrigues.astype(np.float64)
 
 
-# Coordinate system conversions:
-# 1. PHALP outputs rotations in camera coordinate system (Y-down, inverted)
-# 2. Convert to world coordinate system (Y-up, standard SMPL)
-# 3. Convert to Blender coordinate system (Z-up, SMPL-X addon format)
+# COORDINATE SYSTEM FLOW (based on code analysis):
+# 1. PHALP outputs SMPL data in Y-down coordinate system (camera/OpenCV convention)
+# 2. PHALP renders video with 180° X-axis rotation to flip Y-down → Y-up (see py_renderer.py:136)
+# 3. Our NPZ data is extracted directly from PKL without conversion → still Y-down
+# 4. We need to apply the same 180° X-axis rotation that PHALP uses for rendering
+# 5. Then SMPL-X addon's correct_for_anim_format applies -90° X-axis to go Y-up → Z-up
 
-# Step 1: Camera (Y-down) -> World (Y-up): 180° rotation around X axis
-# This flips Y and Z axes
-R_CAM_TO_WORLD = np.array([
+# 180° X-axis rotation matrix (Y-down → Y-up, same as PHALP renderer)
+R_FLIP_Y = np.array([
     [1.0,  0.0,  0.0],
     [0.0, -1.0,  0.0],
     [0.0,  0.0, -1.0]
 ], dtype=np.float64)
 
-# Step 2: SMPL World (Y-up) -> Blender (Z-up): 90° rotation around X axis
-# This rotates Y-up to Z-up
-R_SMPL_TO_BLENDER = np.array([
-    [1.0,  0.0,  0.0],
-    [0.0,  0.0, -1.0],
-    [0.0,  1.0,  0.0]
-], dtype=np.float64)
-
-print("[coord] Coordinate conversion matrices initialized:")
-print("[coord]   R_CAM_TO_WORLD: 180° X-axis (flip Y and Z)")
-print("[coord]   R_SMPL_TO_BLENDER: 90° X-axis (Y-up → Z-up)")
+print("[coord] Coordinate system conversion:")
+print("[coord]   Input: Y-down (PHALP/OpenCV convention)")
+print("[coord]   Step 1: Apply 180° X-axis rotation (Y-down → Y-up)")
+print("[coord]   Step 2: Addon applies -90° X-axis (Y-up → Z-up Blender)")
+print("[coord]   Step 3: FBX export (Z-up → Y-up Unity)")
 
 
-def create_smplx_character_with_shape(betas: np.ndarray | None = None) -> "bpy.types.Object":
+def create_smplx_character_with_shape(gender: str = "female", betas: np.ndarray | None = None) -> tuple:
     """
-    Create SMPL-X character using official addon and apply body shape (betas).
+    Create SMPL-X character using official Meshcapade addon and apply body shape (betas).
+    
+    Args:
+        gender: Body gender ("female", "male", or "neutral")
+        betas: Optional shape parameters (T, 10) or (10,)
     
     Returns:
-        Armature object
+        (armature_object, mesh_object) tuple
     """
     import bpy
     
     # Clean scene
-    for obj in list(bpy.data.objects):
-        obj.select_set(True)
-    if bpy.data.objects:
+    bpy.ops.object.select_all(action='SELECT')
+    if bpy.context.selected_objects:
         bpy.ops.object.delete()
+
+    # Set gender and model type in window manager properties (addon reads from here)
+    bpy.context.window_manager.smplx_tool.smplx_gender = gender
     
-    # Create SMPL-X character via addon
-    # Set gender in window manager properties (addon reads from here)
-    bpy.context.window_manager.smplx_tool.smplx_gender = 'female'
-    
-    # Add SMPL-X character (no parameters needed)
+    # Create SMPL-X character using the official addon operator
+    # Note: The addon exposes smplx_add_gender operator, not create_avatar
     bpy.ops.scene.smplx_add_gender()
     
-    # Find armature
+    # Find armature and mesh (addon creates both)
     arm = None
     mesh = None
     for obj in bpy.data.objects:
@@ -152,38 +198,73 @@ def create_smplx_character_with_shape(betas: np.ndarray | None = None) -> "bpy.t
     
     print(f"[smplx] Created armature: {arm.name}")
     
-    # Don't apply object-level rotation - we'll handle coordinate conversion in FBX export
-    # The armature is in Blender's native Z-up space
-    
-    # Delete the mesh - we only need the armature for animation
-    if mesh is not None:
-        bpy.data.objects.remove(mesh, do_unlink=True)
-        print(f"[smplx] Removed mesh (only exporting armature)")
-    
-    # Apply body shape (betas) - disabled since we removed the mesh
-    if False and betas is not None and mesh is not None:
+    # Apply body shape (betas) if provided
+    if betas is not None and mesh is not None:
         # Use the first frame's betas (assuming consistent shape across frames)
         betas_vec = betas[0] if betas.ndim > 1 else betas
         
         # The SMPL-X addon stores shape keys in the mesh
-        # Shape keys are named: Shape000, Shape001, ..., Shape009 for first 10 betas
+        # Shape keys are named: Shape000, Shape001, ..., Shape299 for SMPL-X
         if mesh.data.shape_keys and mesh.data.shape_keys.key_blocks:
-            num_betas = min(len(betas_vec), 10)  # Standard SMPL uses 10 betas
+            num_betas = min(len(betas_vec), 10)  # Use first 10 betas (body shape)
+            print(f"[smplx] Applying {num_betas} shape parameters")
+            
             for i in range(num_betas):
                 shape_key_name = f"Shape{i:03d}"
                 if shape_key_name in mesh.data.shape_keys.key_blocks:
-                    # Betas typically range from -3 to +3, shape keys expect 0-1
-                    # We'll clamp to a reasonable range
                     value = float(betas_vec[i])
-                    # Normalize: assume betas range is [-3, 3], map to [0, 1]
-                    # But shape keys might have different ranges, so we'll use raw value
                     mesh.data.shape_keys.key_blocks[shape_key_name].value = value
-                    print(f"[smplx] Set {shape_key_name} = {value:.4f}")
+                    print(f"[smplx]   {shape_key_name} = {value:.4f}")
             
-            # Update mesh to apply shape keys
-            bpy.context.view_layer.update()
+            # Update joint locations after changing shape
+            bpy.context.view_layer.objects.active = mesh
+            bpy.ops.object.update_joint_locations('EXEC_DEFAULT')
+            
+            print(f"[smplx] Body shape applied and joint locations updated")
     
-    return arm
+    return arm, mesh
+
+
+def set_pose_from_rodrigues_inline(armature, bone_name, rodrigues, frame=1):
+    """
+    Inline implementation of addon's set_pose_from_rodrigues function.
+    Converts Rodrigues vector to quaternion and sets bone rotation.
+    """
+    from mathutils import Vector, Quaternion
+    
+    rod = Vector((float(rodrigues[0]), float(rodrigues[1]), float(rodrigues[2])))
+    angle_rad = rod.length
+    if angle_rad > 1e-8:
+        axis = rod.normalized()
+    else:
+        axis = Vector((0, 0, 1))  # Default axis if angle is zero
+    
+    pbone = armature.pose.bones[bone_name]
+    pbone.rotation_mode = 'QUATERNION'
+    quat = Quaternion(axis, angle_rad)
+    pbone.rotation_quaternion = quat
+    pbone.keyframe_insert(data_path="rotation_quaternion", frame=frame)
+    
+    if bone_name == 'pelvis':
+        pbone.keyframe_insert('location', frame=frame)
+
+
+def correct_for_anim_format_inline(armature):
+    """
+    Inline implementation of addon's correct_for_anim_format for AMASS.
+    Applies -90° X-axis rotation to root bone to convert Y-up to Z-up.
+    """
+    from mathutils import Quaternion
+    import math
+    
+    # Find root bone (it's usually called 'root' in SMPL-X addon armatures)
+    if 'root' in armature.pose.bones:
+        bone_name = "root"
+        armature.pose.bones[bone_name].rotation_mode = 'QUATERNION'
+        armature.pose.bones[bone_name].rotation_quaternion = Quaternion((1.0, 0.0, 0.0), math.radians(-90))
+        import bpy
+        armature.pose.bones[bone_name].keyframe_insert('rotation_quaternion', frame=bpy.data.scenes[0].frame_current)
+        armature.pose.bones[bone_name].keyframe_insert(data_path="location", frame=bpy.data.scenes[0].frame_current)
 
 
 def bake_animation(
@@ -197,12 +278,12 @@ def bake_animation(
     with_root_motion: bool = False
 ):
     """
-    Bake SMPL rotations into SMPL-X armature animation.
+    Bake SMPL rotations into SMPL-X armature animation using Rodrigues vectors.
     
     Args:
         arm_obj: Blender armature object
         R_root: (T, 3, 3) global orientation (pelvis)
-        R_body: (T, 23, 3, 3) body pose rotations
+        R_body: (T, 23, 3, 3) body pose rotations  
         frame_idx: (T,) frame indices
         fps: Frame rate
         camera: (T, 3) camera translation (optional, for root motion)
@@ -210,7 +291,6 @@ def bake_animation(
         with_root_motion: If True, apply camera translation to root
     """
     import bpy
-    import math
     
     bpy.context.scene.render.fps = int(fps)
     
@@ -223,80 +303,71 @@ def bake_animation(
         camera = camera[order]
     frame_idx = frame_idx - frame_idx.min() + 1
     
-    # Fix NPZ coordinate system: 180° X-axis rotation to flip Y-down to Y-up
-    arm_obj.rotation_mode = 'XYZ'
-    arm_obj.rotation_euler = (math.radians(180), 0, 0)
-    bpy.context.view_layer.update()
-    print("[fix] Applied 180° X-axis rotation to fix NPZ Y-down inversion")
+    print(f"[bake] Applying coordinate system conversion (Y-down → Y-up)")
+    print(f"[bake] This matches PHALP's rendering transformation")
     
-    # Set rotation mode for all pose bones
-    for b in arm_obj.pose.bones:
-        b.rotation_mode = 'QUATERNION'
+    # Apply 180° X-axis rotation to flip Y-down → Y-up (same as PHALP renderer)
+    # For rotation matrices: R_new = R_FLIP_Y @ R_old @ R_FLIP_Y.T
+    R_root_flipped = np.array([R_FLIP_Y @ R @ R_FLIP_Y.T for R in R_root])
+    R_body_flipped = np.array([[R_FLIP_Y @ R @ R_FLIP_Y.T for R in frame] for frame in R_body])
     
+    print(f"[bake] Converting rotation matrices to Rodrigues vectors")
+
     pbones = arm_obj.pose.bones
     
     # Bake each frame
     for f in range(frame_idx.shape[0]):
         frame = int(frame_idx[f])
         bpy.context.scene.frame_set(frame)
-        
+
         # Root bone (pelvis) - global orientation
         if 'pelvis' in pbones:
-            Mr = R_root[f]
+            # Convert rotation matrix to Rodrigues vector (use flipped data)
+            rodrigues_root = rotmat_to_rodrigues(R_root_flipped[f])
             
-            # Fix facing direction: Apply 180° Y-axis rotation to root pose
-            # PHALP outputs characters facing backward, we need them facing forward
-            R_Y180 = np.array([[-1.0, 0.0, 0.0],
-                               [0.0, 1.0, 0.0],
-                               [0.0, 0.0, -1.0]], dtype=np.float64)
-            Mr_fixed = R_Y180 @ Mr
-            
-            q = mat3_to_quat(Mr_fixed)
-            pb = pbones['pelvis']
-            pb.rotation_quaternion = q
-            pb.keyframe_insert(data_path='rotation_quaternion', frame=frame)
+            # Set pose using inline function (same as addon)
+            set_pose_from_rodrigues_inline(arm_obj, 'pelvis', rodrigues_root, frame=frame)
             
             # Root motion (translation)
             if with_root_motion and camera is not None:
                 cam = camera[f]
-                tx, ty, tz = float(cam[0]), float(cam[1]), float(cam[2])
+                # AMASS uses Y-up, correct_for_anim_format_inline will handle conversion
+                # Scale factor: 100 (addon expects cm, we have meters)
+                tx, ty, tz = float(cam[0]) * 100, float(cam[1]) * 100, float(cam[2]) * 100
                 
-                # Camera data from 4D-Humans is in OpenCV convention:
-                # X right, Y down, Z forward
-                # Convert to Blender: X right, Y forward, Z up
-                x_bl = tx * cam_scale
-                y_bl = tz * cam_scale
-                z_bl = (-ty) * cam_scale
-                
-                pb.location = (x_bl, y_bl, z_bl)
+                pb = pbones['pelvis']
+                pb.location = (tx, ty, tz)
                 pb.keyframe_insert(data_path='location', frame=frame)
-        
-        # Body joints (23 joints)
+
+        # Body joints (23 joints in SMPL body_pose)
         for idx, joint_name in enumerate(SMPL_BODY_NAMES):
             if joint_name == 'pelvis':
                 continue  # Already handled as root
             
             if joint_name not in pbones:
-                continue  # Skip if bone doesn't exist in armature
+                print(f"[warn] Joint not found in armature: {joint_name}")
+                continue
             
-            # Apply NPZ rotation directly (no conversion needed after object rotation)
-            M = R_body[f, idx]
-            q = mat3_to_quat(M)
+            # Convert rotation matrix to Rodrigues vector (use flipped data)
+            rodrigues = rotmat_to_rodrigues(R_body_flipped[f, idx])
             
-            pb = pbones[joint_name]
-            pb.rotation_quaternion = q
-            pb.keyframe_insert(data_path='rotation_quaternion', frame=frame)
+            # Set pose using inline function
+            set_pose_from_rodrigues_inline(arm_obj, joint_name, rodrigues, frame=frame)
     
     # Set animation range
     bpy.context.scene.frame_start = int(frame_idx.min())
     bpy.context.scene.frame_end = int(frame_idx.max())
+
+    # Apply coordinate system correction for AMASS format (Y-up -> Z-up Blender)
+    correct_for_anim_format_inline(arm_obj)
+    print(f"[bake] Applied AMASS coordinate system correction (Y-up -> Z-up)")
     
     # Ensure animation data exists
     if arm_obj.animation_data is None:
         arm_obj.animation_data_create()
     if arm_obj.animation_data.action is None:
         arm_obj.animation_data.action = bpy.data.actions.new(name='Take 001')
-    
+
     print(f"[bake] Baked {frame_idx.shape[0]} frames (range: {frame_idx.min()}-{frame_idx.max()})")
 
 
@@ -367,15 +438,16 @@ def main_blender(args):
     
     print(f"[load] NPZ: {args.npz}")
     print(f"[load] Frames: {R_root.shape[0]}, FPS: {fps}")
+    print(f"[load] Gender: {args.gender}")
     if betas is not None:
         print(f"[load] Betas shape: {betas.shape}")
     else:
         print("[load] No betas found, using default body shape")
     
-    # Create SMPL-X character with body shape
-    arm_obj = create_smplx_character_with_shape(betas)
+    # Create SMPL-X character with body shape using official addon
+    arm_obj, mesh_obj = create_smplx_character_with_shape(args.gender, betas)
     
-    # Bake animation
+    # Bake animation using addon's functions
     bake_animation(
         arm_obj,
         R_root,
@@ -387,7 +459,7 @@ def main_blender(args):
         with_root_motion=args.with_root_motion
     )
     
-    # Export FBX
+    # Export FBX (keep mesh for proper export)
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     export_fbx_for_unity(arm_obj, args.out)
     
