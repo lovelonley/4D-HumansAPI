@@ -163,9 +163,17 @@ def convert_to_amass_format(npz_path: str, output_path: str, gender: str, fps: i
     # Flatten poses to (T, 165)
     poses_flat = poses.reshape(T, -1)
     
-    # Translation: keep as-is (camera translation is already in correct space)
-    # The addon will handle any necessary coordinate conversions
-    trans_corrected = trans.copy()
+    # Translation: convert from camera coordinates to relative world movement
+    # Camera translation is in camera coordinate system (depth in Z)
+    # We want relative movement from the first frame (origin at start position)
+    if trans.shape[0] > 0:
+        trans_corrected = trans - trans[0]  # Relative to first frame
+        print(f"[convert] Translation range after normalization:")
+        print(f"[convert]   X: [{trans_corrected[:, 0].min():.4f}, {trans_corrected[:, 0].max():.4f}]")
+        print(f"[convert]   Y: [{trans_corrected[:, 1].min():.4f}, {trans_corrected[:, 1].max():.4f}]")
+        print(f"[convert]   Z: [{trans_corrected[:, 2].min():.4f}, {trans_corrected[:, 2].max():.4f}]")
+    else:
+        trans_corrected = trans.copy()
     
     # Create AMASS format NPZ
     amass_data = {
@@ -260,18 +268,31 @@ def main_blender(args):
         print(f"[blender] Error importing animation: {e}")
         raise
     
-    # Find the created mesh
+    # Find the created mesh and armature
     mesh_obj = None
+    arm_obj = None
     for obj in bpy.data.objects:
         if obj.type == 'MESH' and 'SMPLX' in obj.name:
             mesh_obj = obj
-            break
+        elif obj.type == 'ARMATURE' and 'SMPLX' in obj.name:
+            arm_obj = obj
     
     if mesh_obj is None:
         raise RuntimeError("Failed to find SMPL-X mesh after animation import")
+    if arm_obj is None:
+        raise RuntimeError("Failed to find SMPL-X armature after animation import")
     
-    bpy.context.view_layer.objects.active = mesh_obj
-    print(f"[blender] Active mesh: {mesh_obj.name}")
+    print(f"[blender] Found mesh: {mesh_obj.name}")
+    print(f"[blender] Found armature: {arm_obj.name}")
+    
+    # Delete the mesh - we only want skeleton and animation for Unity
+    print(f"[blender] Removing mesh (keeping only skeleton and animation)...")
+    bpy.data.objects.remove(mesh_obj, do_unlink=True)
+    
+    # Set armature as active for export
+    bpy.context.view_layer.objects.active = arm_obj
+    arm_obj.select_set(True)
+    print(f"[blender] Active object: {arm_obj.name}")
     
     # Export FBX using addon's export
     print(f"\n[blender] Exporting FBX to: {args.out}")
