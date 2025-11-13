@@ -105,8 +105,13 @@ async def create_mocap_task(
         # 验证视频
         is_valid, error_msg, video_info = VideoValidator.validate_video(video_path)
         if not is_valid:
+            # P0修复: 确保删除失败任务的视频文件，防止磁盘泄露
             # 删除任务和文件
             task_manager.delete_task(task.task_id)
+            # 确保删除视频文件
+            if Path(video_path).exists():
+                FileHandler.delete_file(video_path)
+                logger.info(f"Deleted invalid video file: {video_path}")
             
             # 根据错误类型返回不同的错误码
             if "分辨率" in error_msg:
@@ -147,8 +152,13 @@ async def create_mocap_task(
     except HTTPException:
         raise
     except Exception as e:
+        # P0修复: 确保删除失败任务的视频文件
         # 删除任务
         task_manager.delete_task(task.task_id)
+        # 确保删除视频文件（如果已保存）
+        if 'video_path' in locals() and Path(video_path).exists():
+            FileHandler.delete_file(video_path)
+            logger.info(f"Deleted video file after exception: {video_path}")
         logger.error(f"Failed to create task: {e}")
         raise HTTPException(
             status_code=500,

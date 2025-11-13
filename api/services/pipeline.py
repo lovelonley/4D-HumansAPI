@@ -126,9 +126,19 @@ class FourDHumansPipeline:
                 duration=duration
             )
             
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as e:
             duration = time.time() - start_time
             logger.error(f"[{step_name}] Timeout after {duration:.2f}s")
+            
+            # P0修复: 强制终止超时的子进程，防止资源泄露
+            if e.process:
+                try:
+                    logger.warning(f"[{step_name}] Killing timed out process (PID: {e.process.pid})")
+                    e.process.kill()
+                    e.process.wait(timeout=5)  # 等待进程完全退出
+                    logger.info(f"[{step_name}] Process terminated successfully")
+                except Exception as kill_error:
+                    logger.error(f"[{step_name}] Failed to kill process: {kill_error}")
             
             return PipelineResult(
                 success=False,
@@ -543,83 +553,112 @@ class FourDHumansPipeline:
             }
         """
         total_start = time.time()
+        # P0修复: 跟踪已生成的文件，失败时清理
+        generated_files = []
         
-        # 步骤 1: 追踪
-        result = self.run_tracking(video_path, task_id, progress_callback)
-        if not result.success:
+        try:
+            # 步骤 1: 追踪
+            result = self.run_tracking(video_path, task_id, progress_callback)
+            if not result.success:
+                return {
+                    "success": False,
+                    "error": result.error,
+                    "error_code": result.error_code,
+                    "error_step": ProcessStep.TRACKING,
+                    "total_duration": time.time() - total_start
+                }
+            tracking_pkl = result.output_path
+            generated_files.append(tracking_pkl)
+            
+            # 步骤 2: 提取
+            result = self.run_extraction(tracking_pkl, task_id, track_id, progress_callback)
+            if not result.success:
+                # 清理已生成的文件
+                self._cleanup_generated_files(generated_files)
+                return {
+                    "success": False,
+                    "error": result.error,
+                    "error_code": result.error_code,
+                    "error_step": ProcessStep.TRACK_EXTRACTION,
+                    "total_duration": time.time() - total_start
+                }
+            extracted_npz = result.output_path
+            generated_files.append(extracted_npz)
+            
+            # 步骤 3: 平滑
+            result = self.run_smoothing(
+                extracted_npz, task_id,
+                smoothing_strength, smoothing_window, smoothing_ema,
+                progress_callback
+            )
+            if not result.success:
+                # 清理已生成的文件
+                self._cleanup_generated_files(generated_files)
+                return {
+                    "success": False,
+                    "error": result.error,
+                    "error_code": result.error_code,
+                    "error_step": ProcessStep.SMOOTHING,
+                    "total_duration": time.time() - total_start
+                }
+            smoothed_npz = result.output_path
+            generated_files.append(smoothed_npz)
+            
+            # 步骤 4: 导出 FBX
+            result = self.run_fbx_export(
+                smoothed_npz, task_id,
+                fps, with_root_motion, cam_scale,
+                progress_callback
+            )
+            if not result.success:
+                # 清理已生成的文件
+                self._cleanup_generated_files(generated_files)
+                return {
+                    "success": False,
+                    "error": result.error,
+                    "error_code": result.error_code,
+                    "error_step": ProcessStep.FBX_EXPORT,
+                    "total_duration": time.time() - total_start
+                }
+            fbx_path = result.output_path
+            
+            if progress_callback:
+                progress_callback(100)
+            
+            total_duration = time.time() - total_start
+            logger.info(f"Full pipeline completed in {total_duration:.2f}s")
+            
             return {
-                "success": False,
-                "error": result.error,
-                "error_code": result.error_code,
-                "error_step": ProcessStep.TRACKING,
-                "total_duration": time.time() - total_start
-            }
-        tracking_pkl = result.output_path
-        
-        # 步骤 2: 提取
-        result = self.run_extraction(tracking_pkl, task_id, track_id, progress_callback)
-        if not result.success:
-            return {
-                "success": False,
-                "tracking_pkl": tracking_pkl,
-                "error": result.error,
-                "error_code": result.error_code,
-                "error_step": ProcessStep.TRACK_EXTRACTION,
-                "total_duration": time.time() - total_start
-            }
-        extracted_npz = result.output_path
-        
-        # 步骤 3: 平滑
-        result = self.run_smoothing(
-            extracted_npz, task_id,
-            smoothing_strength, smoothing_window, smoothing_ema,
-            progress_callback
-        )
-        if not result.success:
-            return {
-                "success": False,
-                "tracking_pkl": tracking_pkl,
-                "extracted_npz": extracted_npz,
-                "error": result.error,
-                "error_code": result.error_code,
-                "error_step": ProcessStep.SMOOTHING,
-                "total_duration": time.time() - total_start
-            }
-        smoothed_npz = result.output_path
-        
-        # 步骤 4: 导出 FBX
-        result = self.run_fbx_export(
-            smoothed_npz, task_id,
-            fps, with_root_motion, cam_scale,
-            progress_callback
-        )
-        if not result.success:
-            return {
-                "success": False,
+                "success": True,
+                "fbx_path": fbx_path,
                 "tracking_pkl": tracking_pkl,
                 "extracted_npz": extracted_npz,
                 "smoothed_npz": smoothed_npz,
-                "error": result.error,
-                "error_code": result.error_code,
-                "error_step": ProcessStep.FBX_EXPORT,
-                "total_duration": time.time() - total_start
+                "total_duration": total_duration
             }
-        fbx_path = result.output_path
         
-        if progress_callback:
-            progress_callback(100)
+        except Exception as e:
+            # P0修复: 异常时清理已生成的文件
+            logger.error(f"Pipeline exception: {e}", exc_info=True)
+            self._cleanup_generated_files(generated_files)
+            raise
+    
+    def _cleanup_generated_files(self, file_paths: list):
+        """
+        P0修复: 清理已生成的文件，防止磁盘泄露
         
-        total_duration = time.time() - total_start
-        logger.info(f"Full pipeline completed in {total_duration:.2f}s")
+        Args:
+            file_paths: 文件路径列表
+        """
+        from ..utils.file_handler import FileHandler
         
-        return {
-            "success": True,
-            "fbx_path": fbx_path,
-            "tracking_pkl": tracking_pkl,
-            "extracted_npz": extracted_npz,
-            "smoothed_npz": smoothed_npz,
-            "total_duration": total_duration
-        }
+        for file_path in file_paths:
+            if file_path and Path(file_path).exists():
+                try:
+                    FileHandler.delete_file(file_path)
+                    logger.info(f"Cleaned up generated file: {file_path}")
+                except Exception as e:
+                    logger.error(f"Failed to cleanup file {file_path}: {e}")
     
     def _get_longest_track_id(self, tracking_pkl: str) -> Optional[int]:
         """

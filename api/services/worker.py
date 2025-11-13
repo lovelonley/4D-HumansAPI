@@ -22,6 +22,11 @@ class Worker:
         if self.running:
             return
         
+        # P0修复: 启动时重置 current_task_id，防止状态卡死
+        # 工具型项目：崩溃丢失状态可接受，但需避免影响后续任务
+        self.task_manager.current_task_id = None
+        logger.info("Reset current_task_id on worker start")
+        
         self.running = True
         self.task = asyncio.create_task(self._process_loop())
         logger.info("Worker started")
