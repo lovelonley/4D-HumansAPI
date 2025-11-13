@@ -216,11 +216,8 @@ def create_smplx_character_with_shape(gender: str = "female", betas: np.ndarray 
                     mesh.data.shape_keys.key_blocks[shape_key_name].value = value
                     print(f"[smplx]   {shape_key_name} = {value:.4f}")
             
-            # Update joint locations after changing shape
-            bpy.context.view_layer.objects.active = mesh
-            bpy.ops.object.update_joint_locations('EXEC_DEFAULT')
-            
-            print(f"[smplx] Body shape applied and joint locations updated")
+            # Shape keys are applied, armature will update automatically
+            print(f"[smplx] Body shape applied successfully")
     
     return arm, mesh
 
