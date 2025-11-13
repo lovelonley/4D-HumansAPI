@@ -130,23 +130,29 @@ def convert_to_amass_format(npz_path: str, output_path: str, gender: str, fps: i
         betas = np.zeros(10, dtype=np.float64)
     
     print(f"[convert] Converting rotation matrices to Rodrigues vectors...")
-    print(f"[convert] NOTE: Rotation matrices are in SMPL model space (already correct)")
-    print(f"[convert] Only converting translation from camera to world coordinates")
+    print(f"[convert] NOTE: Applying 180° X-rotation to root for correct orientation")
     
     # IMPORTANT INSIGHT:
-    # - PHALP's rotation matrices are already in correct SMPL model space
-    # - PHALP applies 180° rotation to MESH VERTICES for rendering (not to rotations)
-    # - We should NOT transform the rotation matrices
-    # - We only need to convert translation from camera coords to world coords
+    # - Body joint rotations are in correct SMPL model space (local rotations)
+    # - But the global orientation (root) needs 180° X-flip to match PHALP rendering
+    # - PHALP applies this flip to vertices; we apply it to root rotation instead
     
-    # Convert rotation matrices to Rodrigues vectors (NO transformation needed)
+    # 180° rotation around X-axis for flipping upside-down to upright
+    R_FLIP_X_180 = np.array([
+        [1.0,  0.0,  0.0],
+        [0.0, -1.0,  0.0],
+        [0.0,  0.0, -1.0]
+    ], dtype=np.float64)
+    
+    # Convert rotation matrices to Rodrigues vectors
     poses = np.zeros((T, 55, 3), dtype=np.float64)
     
     for t in range(T):
-        # Root (pelvis) - direct conversion, no coordinate transformation
-        poses[t, 0] = rotmat_to_rodrigues(R_root[t])
+        # Root (pelvis) - apply 180° X-flip to match PHALP's vertex transformation
+        R_root_flipped = R_FLIP_X_180 @ R_root[t]
+        poses[t, 0] = rotmat_to_rodrigues(R_root_flipped)
         
-        # Body joints (23 joints: left_hip to right_thumb3)
+        # Body joints (23 joints) - keep as-is (local rotations are correct)
         for j in range(23):
             poses[t, j + 1] = rotmat_to_rodrigues(R_body[t, j])
         
