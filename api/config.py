@@ -65,6 +65,13 @@ class Settings(BaseSettings):
     CLEANUP_COMPLETED_HOURS: int = 72  # 完成任务保留时间（3天）
     CLEANUP_FAILED_HOURS: int = 72  # 失败任务保留时间（3天）
     
+    # 开发/演示文件清理
+    CLEANUP_DEMO_FILES_ENABLED: bool = True
+    CLEANUP_DEMO_FILES_DAYS: int = 30  # 演示文件保留时间（30天）
+    CLEANUP_TEST_FILES_ENABLED: bool = True
+    CLEANUP_TEST_FILES_DAYS: int = 7  # 测试文件保留时间（7天）
+    CLEANUP_LOG_FILES_DAYS: int = 7  # 日志文件保留时间（7天）
+    
     # ============================================================
     # SmoothNet 配置
     # ============================================================

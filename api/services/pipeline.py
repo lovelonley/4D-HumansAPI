@@ -4,6 +4,7 @@ import os
 import sys
 import time
 import pickle
+import shutil
 from pathlib import Path
 from typing import Optional, Dict, Callable
 from ..config import settings
@@ -193,9 +194,12 @@ class FourDHumansPipeline:
         # 从视频路径提取文件名（PHALP 会自动使用视频文件名作为输出）
         video_name = Path(video_path).stem
         
-        # 输出路径
-        output_pkl = self.output_dir / "results" / f"demo_{video_name}.pkl"
-        output_pkl.parent.mkdir(parents=True, exist_ok=True)
+        # PHALP 输出路径（使用 video_name，PHALP 内部会生成 demo_{video_name}.pkl）
+        phalp_output_pkl = self.output_dir / "results" / f"demo_{video_name}.pkl"
+        phalp_output_pkl.parent.mkdir(parents=True, exist_ok=True)
+        
+        # 最终输出路径（使用 task_id 统一命名）
+        output_pkl = self.output_dir / "results" / f"{task_id}.pkl"
         
         # 构建命令（不使用 video.seq 参数，PHALP 会自动从视频文件名提取）
         cmd = [
@@ -213,14 +217,22 @@ class FourDHumansPipeline:
         )
         
         if result.success:
-            # 验证输出文件
-            if output_pkl.exists():
+            # 验证 PHALP 输出文件
+            if phalp_output_pkl.exists():
+                # 重命名为使用 task_id 的文件名（统一命名规范）
+                try:
+                    shutil.move(str(phalp_output_pkl), str(output_pkl))
+                    logger.info(f"Renamed tracking output: {phalp_output_pkl.name} -> {output_pkl.name}")
+                except Exception as e:
+                    logger.warning(f"Failed to rename tracking file, using original: {e}")
+                    output_pkl = phalp_output_pkl
+                
                 result.output_path = str(output_pkl)
                 if progress_callback:
                     progress_callback(30)
             else:
                 result.success = False
-                result.error = f"Tracking output file not found: {output_pkl}"
+                result.error = f"Tracking output file not found: {phalp_output_pkl}"
                 result.error_code = ErrorCode.TRACKING_FAILED
         
         return result

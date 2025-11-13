@@ -62,15 +62,27 @@ async def lifespan(app: FastAPI):
 
 
 async def _auto_cleanup():
-    """自动清理过期任务"""
+    """自动清理过期任务和文件"""
     task_manager = get_task_manager()
     
     while True:
         try:
             await asyncio.sleep(settings.CLEANUP_INTERVAL_HOURS * 3600)
             logger.info("Running auto cleanup")
-            cleaned = task_manager.cleanup_old_tasks()
-            logger.info(f"Auto cleanup completed: {cleaned} tasks removed")
+            
+            # 1. 清理 API 任务文件
+            cleaned_tasks = task_manager.cleanup_old_tasks()
+            
+            # 2. 清理开发/演示文件
+            cleaned_demo = task_manager.cleanup_demo_files()
+            cleaned_test = task_manager.cleanup_test_files()
+            cleaned_logs = task_manager.cleanup_log_files()
+            
+            logger.info(
+                f"Auto cleanup completed: {cleaned_tasks} tasks, "
+                f"{cleaned_demo} demo files, {cleaned_test} test files, "
+                f"{cleaned_logs} log files removed"
+            )
         except asyncio.CancelledError:
             break
         except Exception as e:

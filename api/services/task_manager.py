@@ -276,6 +276,133 @@ class TaskManager:
             logger.info(f"Cleaned up {len(tasks_to_delete)} old tasks")
         
         return len(tasks_to_delete)
+    
+    def cleanup_demo_files(self) -> int:
+        """清理演示文件"""
+        if not settings.CLEANUP_DEMO_FILES_ENABLED:
+            return 0
+        
+        from datetime import timedelta
+        from pathlib import Path
+        import time
+        
+        deleted_count = 0
+        threshold_days = settings.CLEANUP_DEMO_FILES_DAYS
+        threshold_seconds = threshold_days * 24 * 3600
+        now = time.time()
+        
+        # 清理 outputs/ 中的演示文件
+        outputs_dir = Path(settings.OUTPUT_DIR)
+        
+        # 清理 PHALP_*.mp4 文件
+        for mp4_file in outputs_dir.glob("PHALP_*.mp4"):
+            if mp4_file.is_file():
+                file_age = now - mp4_file.stat().st_mtime
+                if file_age > threshold_seconds:
+                    try:
+                        mp4_file.unlink()
+                        logger.info(f"Deleted old demo video: {mp4_file}")
+                        deleted_count += 1
+                    except Exception as e:
+                        logger.error(f"Failed to delete {mp4_file}: {e}")
+        
+        # 清理 _DEMO/ 目录
+        demo_dir = outputs_dir / "_DEMO"
+        if demo_dir.exists():
+            for item in demo_dir.iterdir():
+                if item.is_dir() or item.is_file():
+                    item_age = now - item.stat().st_mtime
+                    if item_age > threshold_seconds:
+                        try:
+                            if item.is_dir():
+                                import shutil
+                                shutil.rmtree(item)
+                            else:
+                                item.unlink()
+                            logger.info(f"Deleted old demo file: {item}")
+                            deleted_count += 1
+                        except Exception as e:
+                            logger.error(f"Failed to delete {item}: {e}")
+        
+        # 清理 demo_out/ 目录
+        demo_out_dir = Path(settings.PROJECT_ROOT) / "demo_out"
+        if demo_out_dir.exists():
+            for item in demo_out_dir.iterdir():
+                if item.is_file():
+                    item_age = now - item.stat().st_mtime
+                    if item_age > threshold_seconds:
+                        try:
+                            item.unlink()
+                            logger.info(f"Deleted old demo_out file: {item}")
+                            deleted_count += 1
+                        except Exception as e:
+                            logger.error(f"Failed to delete {item}: {e}")
+        
+        if deleted_count > 0:
+            logger.info(f"Cleaned up {deleted_count} demo files")
+        
+        return deleted_count
+    
+    def cleanup_test_files(self) -> int:
+        """清理测试文件"""
+        if not settings.CLEANUP_TEST_FILES_ENABLED:
+            return 0
+        
+        from pathlib import Path
+        import time
+        
+        deleted_count = 0
+        threshold_days = settings.CLEANUP_TEST_FILES_DAYS
+        threshold_seconds = threshold_days * 24 * 3600
+        now = time.time()
+        
+        # 清理 tmp/ 中的测试文件
+        tmp_dir = Path(settings.TEMP_DIR)
+        if tmp_dir.exists():
+            for test_file in tmp_dir.glob("test_*"):
+                if test_file.is_file():
+                    file_age = now - test_file.stat().st_mtime
+                    if file_age > threshold_seconds:
+                        try:
+                            test_file.unlink()
+                            logger.info(f"Deleted old test file: {test_file}")
+                            deleted_count += 1
+                        except Exception as e:
+                            logger.error(f"Failed to delete {test_file}: {e}")
+        
+        if deleted_count > 0:
+            logger.info(f"Cleaned up {deleted_count} test files")
+        
+        return deleted_count
+    
+    def cleanup_log_files(self) -> int:
+        """清理日志文件"""
+        from pathlib import Path
+        import time
+        
+        deleted_count = 0
+        threshold_days = settings.CLEANUP_LOG_FILES_DAYS
+        threshold_seconds = threshold_days * 24 * 3600
+        now = time.time()
+        
+        # 清理 logs/ 目录
+        logs_dir = Path(settings.LOG_DIR)
+        if logs_dir.exists():
+            for log_file in logs_dir.glob("*.log"):
+                if log_file.is_file():
+                    file_age = now - log_file.stat().st_mtime
+                    if file_age > threshold_seconds:
+                        try:
+                            log_file.unlink()
+                            logger.info(f"Deleted old log file: {log_file}")
+                            deleted_count += 1
+                        except Exception as e:
+                            logger.error(f"Failed to delete {log_file}: {e}")
+        
+        if deleted_count > 0:
+            logger.info(f"Cleaned up {deleted_count} log files")
+        
+        return deleted_count
 
 
 # 全局任务管理器实例

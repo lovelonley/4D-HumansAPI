@@ -74,14 +74,25 @@ async def get_queue_info():
 @router.post(
     "/cleanup",
     summary="手动清理",
-    description="手动触发过期任务清理"
+    description="手动触发过期任务和文件清理"
 )
 async def manual_cleanup():
-    """手动清理过期任务"""
+    """手动清理过期任务和文件"""
     task_manager = get_task_manager()
-    cleaned = task_manager.cleanup_old_tasks()
+    
+    cleaned_tasks = task_manager.cleanup_old_tasks()
+    cleaned_demo = task_manager.cleanup_demo_files()
+    cleaned_test = task_manager.cleanup_test_files()
+    cleaned_logs = task_manager.cleanup_log_files()
+    
+    total_cleaned = cleaned_tasks + cleaned_demo + cleaned_test + cleaned_logs
+    
     return {
-        "message": f"Cleaned up {cleaned} old tasks",
-        "cleaned_count": cleaned
+        "message": f"Cleaned up {total_cleaned} items",
+        "cleaned_tasks": cleaned_tasks,
+        "cleaned_demo_files": cleaned_demo,
+        "cleaned_test_files": cleaned_test,
+        "cleaned_log_files": cleaned_logs,
+        "total_cleaned": total_cleaned
     }
 
