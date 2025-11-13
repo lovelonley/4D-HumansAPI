@@ -39,6 +39,14 @@ import argparse
 import numpy as np
 from pathlib import Path
 
+# Add tools directory to path for motion_analyzer
+sys.path.insert(0, str(Path(__file__).parent.parent))
+try:
+    from motion_analyzer import MotionAnalyzer
+except ImportError:
+    MotionAnalyzer = None
+    print("[warning] motion_analyzer not found, motion analysis disabled")
+
 
 def parse_args(argv):
     ap = argparse.ArgumentParser(description="Convert NPZ to FBX using SMPL-X addon")
@@ -116,9 +124,69 @@ def convert_to_amass_format(npz_path: str, output_path: str, gender: str, fps: i
     
     # Get camera translation (default to zeros if not available)
     if 'camera' in data and data['camera'].size > 0:
-        trans = data['camera'].copy()  # (T, 3)
+        trans_raw = data['camera'].copy()  # (T, 3)
     else:
-        trans = np.zeros((T, 3), dtype=np.float64)
+        trans_raw = np.zeros((T, 3), dtype=np.float64)
+    
+    # === MOTION ANALYSIS ===
+    if MotionAnalyzer is not None and trans_raw.size > 0:
+        print("\n" + "=" * 70)
+        print("MOTION ANALYSIS")
+        print("=" * 70)
+        
+        analyzer = MotionAnalyzer(dict(data))
+        result = analyzer.analyze()
+        
+        # Print detailed analysis
+        print(f"\n[Analysis 1] Heuristic:")
+        h = result['details']['heuristic']
+        print(f"  Z range: {h['reasoning']['z_range']:.2f}m")
+        print(f"  XY max: {h['reasoning']['xy_max']:.2f}m")
+        print(f"  Z is camera: {h['reasoning']['z_is_camera']}")
+        print(f"  Confidence: {h['confidence']:.2f}")
+        
+        print(f"\n[Analysis 2] Pelvis:")
+        p = result['details']['pelvis']
+        if p['reasoning'].get('available'):
+            print(f"  Pelvis smoother: {p['reasoning']['pelvis_smoother']}")
+            print(f"  Pelvis Z range: {p['reasoning']['pelvis_z_range']:.2f}m")
+            print(f"  XY diff: {p['reasoning']['xy_diff']:.3f}m")
+            print(f"  Confidence: {p['confidence']:.2f}")
+        else:
+            print(f"  {p['reasoning']['message']}")
+            print(f"  Confidence: {p['confidence']:.2f}")
+        
+        print(f"\n[Analysis 3] Perspective:")
+        t = result['details']['perspective']
+        if t['reasoning'].get('available'):
+            print(f"  Scale matches: {t['reasoning']['scale_matches']}")
+            print(f"  Bbox centered: {t['reasoning']['bbox_centered']}")
+            print(f"  Motion type: {t['reasoning']['motion_type']}")
+            print(f"  Confidence: {t['confidence']:.2f}")
+        else:
+            print(f"  {t['reasoning']['message']}")
+            print(f"  Confidence: {t['confidence']:.2f}")
+        
+        print(f"\n[Decision]")
+        print(f"  Primary method: {result['method']}")
+        print(f"  Final confidence: {result['confidence']:.2f}")
+        print(f"  Z decision: {result['z_decision']} (votes: {sum(result['z_votes'])}/3)")
+        print(f"  Weights: H={result['weights']['heuristic']:.2f}, "
+              f"P={result['weights']['pelvis']:.2f}, "
+              f"T={result['weights']['perspective']:.2f}")
+        
+        # Use corrected translation
+        trans = result['trans_corrected']
+        
+        print(f"\n[Final Translation]")
+        print(f"  X: [{trans[:, 0].min():.3f}, {trans[:, 0].max():.3f}]")
+        print(f"  Y: [{trans[:, 1].min():.3f}, {trans[:, 1].max():.3f}]")
+        print(f"  Z: [{trans[:, 2].min():.3f}, {trans[:, 2].max():.3f}]")
+        print("=" * 70 + "\n")
+    else:
+        # No motion analysis, use raw translation
+        trans = trans_raw
+        print("[convert] Motion analysis skipped (no analyzer or no camera data)")
     
     # Get betas (default to zeros if not available)
     if 'betas' in data and data['betas'].size > 0:
@@ -129,7 +197,7 @@ def convert_to_amass_format(npz_path: str, output_path: str, gender: str, fps: i
     else:
         betas = np.zeros(10, dtype=np.float64)
     
-    print(f"[convert] Converting rotation matrices to Rodrigues vectors...")
+    print(f"\n[convert] Converting rotation matrices to Rodrigues vectors...")
     print(f"[convert] NOTE: Applying 180° X-rotation to root for correct orientation")
     
     # IMPORTANT INSIGHT:
@@ -163,17 +231,8 @@ def convert_to_amass_format(npz_path: str, output_path: str, gender: str, fps: i
     # Flatten poses to (T, 165)
     poses_flat = poses.reshape(T, -1)
     
-    # Translation: convert from camera coordinates to relative world movement
-    # Camera translation is in camera coordinate system (depth in Z)
-    # We want relative movement from the first frame (origin at start position)
-    if trans.shape[0] > 0:
-        trans_corrected = trans - trans[0]  # Relative to first frame
-        print(f"[convert] Translation range after normalization:")
-        print(f"[convert]   X: [{trans_corrected[:, 0].min():.4f}, {trans_corrected[:, 0].max():.4f}]")
-        print(f"[convert]   Y: [{trans_corrected[:, 1].min():.4f}, {trans_corrected[:, 1].max():.4f}]")
-        print(f"[convert]   Z: [{trans_corrected[:, 2].min():.4f}, {trans_corrected[:, 2].max():.4f}]")
-    else:
-        trans_corrected = trans.copy()
+    # Translation: already corrected by motion analysis above
+    trans_corrected = trans
     
     # Create AMASS format NPZ
     amass_data = {

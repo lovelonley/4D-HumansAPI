@@ -76,6 +76,13 @@ def extract_track(data: Dict[str, Any], target_tid: int) -> Dict[str, np.ndarray
     cam_list: List[np.ndarray] = []
     frame_idx_list: List[int] = []
     betas_list: List[np.ndarray] = []
+    
+    # New: additional data for motion analysis
+    joints_3d_list: List[np.ndarray] = []
+    bbox_list: List[np.ndarray] = []
+    center_list: List[np.ndarray] = []
+    scale_list: List[float] = []
+    img_size_list: List[np.ndarray] = []
 
     for k in frame_keys:
         fr = data[k]
@@ -114,12 +121,48 @@ def extract_track(data: Dict[str, Any], target_tid: int) -> Dict[str, np.ndarray
             cam = np.zeros((3,), dtype=np.float32)
 
         frame_idx = int(fr.get("time", len(frame_idx_list)))
+        
+        # Extract additional data for motion analysis
+        joints_3d_list_fr = fr.get("3d_joints")
+        if joints_3d_list_fr and idx < len(joints_3d_list_fr):
+            joints_3d = np.array(joints_3d_list_fr[idx], dtype=np.float32)
+        else:
+            joints_3d = np.zeros((45, 3), dtype=np.float32)
+        
+        bbox_list_fr = fr.get("bbox")
+        if bbox_list_fr and idx < len(bbox_list_fr):
+            bbox = np.array(bbox_list_fr[idx], dtype=np.float32)
+        else:
+            bbox = np.zeros(4, dtype=np.float32)
+        
+        center_list_fr = fr.get("center")
+        if center_list_fr and idx < len(center_list_fr):
+            center = np.array(center_list_fr[idx], dtype=np.float32)
+        else:
+            center = np.zeros(2, dtype=np.float32)
+        
+        scale_list_fr = fr.get("scale")
+        if scale_list_fr and idx < len(scale_list_fr):
+            scale = float(scale_list_fr[idx])
+        else:
+            scale = 0.0
+        
+        size_list_fr = fr.get("size")
+        if size_list_fr and len(size_list_fr) > 0:
+            img_size = np.array(size_list_fr[0], dtype=np.float32)
+        else:
+            img_size = np.array([1920, 1080], dtype=np.float32)
 
         R_root_list.append(R_root.astype(np.float32))
         R_body_list.append(R_body.astype(np.float32))
         cam_list.append(cam)
         frame_idx_list.append(frame_idx)
         betas_list.append(betas)
+        joints_3d_list.append(joints_3d)
+        bbox_list.append(bbox)
+        center_list.append(center)
+        scale_list.append(scale)
+        img_size_list.append(img_size)
 
     if not R_root_list:
         raise SystemExit("No valid frames extracted for the specified tid.")
@@ -130,6 +173,11 @@ def extract_track(data: Dict[str, Any], target_tid: int) -> Dict[str, np.ndarray
     cam_arr = np.stack([cam_list[i] for i in order], axis=0)
     frame_idx_arr = np.array([frame_idx_list[i] for i in order], dtype=np.int32)
     betas_arr = np.stack([betas_list[i] for i in order], axis=0)
+    joints_3d_arr = np.stack([joints_3d_list[i] for i in order], axis=0)
+    bbox_arr = np.stack([bbox_list[i] for i in order], axis=0)
+    center_arr = np.stack([center_list[i] for i in order], axis=0)
+    scale_arr = np.array([scale_list[i] for i in order], dtype=np.float32)
+    img_size_arr = np.stack([img_size_list[i] for i in order], axis=0)
 
     return {
         "R_root": R_root_arr,
@@ -137,6 +185,11 @@ def extract_track(data: Dict[str, Any], target_tid: int) -> Dict[str, np.ndarray
         "camera": cam_arr,
         "frame_idx": frame_idx_arr,
         "betas": betas_arr,
+        "3d_joints": joints_3d_arr,
+        "bbox": bbox_arr,
+        "center": center_arr,
+        "scale": scale_arr,
+        "img_size": img_size_arr,
     }
 
 
@@ -160,6 +213,11 @@ def main() -> None:
         frame_idx=track["frame_idx"],
         betas=track["betas"],
         fps=np.array([args.fps], dtype=np.int32),
+        **{"3d_joints": track["3d_joints"],
+           "bbox": track["bbox"],
+           "center": track["center"],
+           "scale": track["scale"],
+           "img_size": track["img_size"]}
     )
     n_frames = int(track["R_root"].shape[0])
     f0 = int(track["frame_idx"][0])

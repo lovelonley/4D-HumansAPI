@@ -273,6 +273,13 @@ def main():
     # Preserve betas if present
     if betas is not None:
         out_dict['betas'] = betas[:T]
+    
+    # Preserve additional fields for motion analysis (pass-through, no smoothing)
+    extra_fields = ['3d_joints', 'bbox', 'center', 'scale', 'img_size']
+    for field in extra_fields:
+        if field in data:
+            out_dict[field] = data[field][:T]
+    
     np.savez_compressed(args.out, **out_dict)
     # Report smoothing statistics (before vs after)
     R0 = _stack24(R_root, R_body)
