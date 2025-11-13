@@ -177,12 +177,14 @@ def create_smplx_character_with_shape(gender: str = "female", betas: np.ndarray 
     if bpy.context.selected_objects:
         bpy.ops.object.delete()
 
-    # Set gender and model type in window manager properties (addon reads from here)
-    bpy.context.window_manager.smplx_tool.smplx_gender = gender
+    # Set gender and SMPL version in window manager properties (addon reads from here)
+    # Based on properties.py: WindowManager.smpl_tool (not smplx_tool)
+    bpy.context.window_manager.smpl_tool.gender = gender
+    bpy.context.window_manager.smpl_tool.SMPL_version = "SMPLX"
     
     # Create SMPL-X character using the official addon operator
-    # Note: The addon exposes smplx_add_gender operator, not create_avatar
-    bpy.ops.scene.smplx_add_gender()
+    # Based on operators.py:254 - OP_CreateAvatar with bl_idname "scene.create_avatar"
+    bpy.ops.scene.create_avatar()
     
     # Find armature and mesh (addon creates both)
     arm = None
