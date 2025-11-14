@@ -12,12 +12,47 @@ from ..services.task_manager import get_task_manager
 from ..utils.logger import logger
 from ..utils.file_handler import FileHandler
 from ..utils.video_validator import VideoValidator
+from collections import defaultdict
+from time import time
 
 
 router = APIRouter(
     prefix="/api/v1/mocap",
     tags=["mocap"]
 )
+
+# P1修复: 请求频率限制（内存存储）
+_rate_limit_data: dict = defaultdict(list)
+
+
+def _check_rate_limit(client_id: str) -> bool:
+    """
+    检查客户端请求频率限制
+    
+    Returns:
+        True if within limit, False if exceeded
+    """
+    if not settings.RATE_LIMIT_ENABLED:
+        return True
+    
+    now = time()
+    client_requests = _rate_limit_data[client_id]
+    
+    # 清理过期记录（1小时前）
+    client_requests[:] = [t for t in client_requests if now - t < 3600]
+    
+    # 检查分钟限制
+    recent_minute = [t for t in client_requests if now - t < 60]
+    if len(recent_minute) >= settings.RATE_LIMIT_PER_MINUTE:
+        return False
+    
+    # 检查小时限制
+    if len(client_requests) >= settings.RATE_LIMIT_PER_HOUR:
+        return False
+    
+    # 记录本次请求
+    client_requests.append(now)
+    return True
 
 
 @router.post(
