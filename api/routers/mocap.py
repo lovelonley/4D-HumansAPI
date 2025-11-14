@@ -1,5 +1,5 @@
 """MoCap API 路由"""
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Path as PathParam
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Path as PathParam, Request
 from fastapi.responses import FileResponse
 from typing import Optional
 from pathlib import Path
