@@ -69,6 +69,90 @@ API_URL="http://your-server.com:8000"
 ssh $SSH_HOST "curl http://localhost:8000/health"
 ```
 
+## Systemd 服务配置
+
+### 服务名称
+`4d-humans-api`
+
+### 创建服务文件
+
+创建 `/etc/systemd/system/4d-humans-api.service`：
+
+```ini
+[Unit]
+Description=4D-Humans MoCap API Service
+After=network.target
+
+[Service]
+Type=simple
+User=your-user
+WorkingDirectory=/path/to/4D-Humans
+Environment="PATH=/path/to/conda/envs/4D-humans/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/path/to/conda/envs/4D-humans/bin/python -m api.main
+Restart=always
+RestartSec=10
+StandardOutput=append:/path/to/4D-Humans/logs/4d-humans-api.log
+StandardError=append:/path/to/4D-Humans/logs/4d-humans-api-error.log
+
+LimitNOFILE=65536
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**重要**: 替换以下路径：
+- `User`: 运行服务的用户（如 `zgx`）
+- `WorkingDirectory`: 项目目录（如 `/home/zgx/4D-Humans`）
+- `Environment PATH`: Conda 环境路径（如 `/home/zgx/miniconda3/envs/4D-humans/bin`）
+- `ExecStart`: Python 可执行文件路径
+- `StandardOutput/StandardError`: 日志文件路径
+
+### 启用和启动服务
+
+```bash
+# 复制服务文件（如果使用项目中的模板）
+sudo cp deploy/4d-humans-api.service /etc/systemd/system/
+
+# 编辑服务文件，修改路径
+sudo nano /etc/systemd/system/4d-humans-api.service
+
+# 重载 systemd
+sudo systemctl daemon-reload
+
+# 启用自启动
+sudo systemctl enable 4d-humans-api
+
+# 启动服务
+sudo systemctl start 4d-humans-api
+
+# 检查状态
+sudo systemctl status 4d-humans-api
+
+# 查看日志
+sudo journalctl -u 4d-humans-api -f
+```
+
+### 服务管理命令
+
+```bash
+# 启动服务
+sudo systemctl start 4d-humans-api
+
+# 停止服务
+sudo systemctl stop 4d-humans-api
+
+# 重启服务
+sudo systemctl restart 4d-humans-api
+
+# 查看状态
+sudo systemctl status 4d-humans-api
+
+# 查看日志
+sudo journalctl -u 4d-humans-api -n 50
+sudo journalctl -u 4d-humans-api -f
+```
+
 ## 注意事项
 
 1. **Submodules**: 
@@ -76,7 +160,7 @@ ssh $SSH_HOST "curl http://localhost:8000/health"
    - 确保远程服务器可以访问 GitHub（用于拉取 submodules）
    - 目录名使用小写：`phalp/`、`smoothnet/`
 2. **权限**: 某些操作可能需要 sudo 权限
-3. **服务管理**: 根据你的部署方式调整服务重启命令
+3. **服务管理**: 使用 systemd 服务管理（服务名：`4d-humans-api`）
 4. **环境变量**: 确保远程服务器有正确的环境变量配置
    - `SMOOTHNET_CHECKPOINT=smoothnet/data/checkpoints/pw3d_spin_3D/checkpoint_8.pth.tar`
 5. **文件管理**: 部署后会自动清理旧文件（配置在 `.env` 中）
@@ -100,7 +184,17 @@ ssh $SSH_HOST "cd $DEPLOY_PATH && git submodule update --init --recursive"
 
 ### 服务无法启动
 ```bash
+# 查看服务状态
+ssh $SSH_HOST "sudo systemctl status 4d-humans-api"
+
 # 查看日志
 ssh $SSH_HOST "sudo journalctl -u 4d-humans-api -n 50"
+
+# 检查服务文件配置
+ssh $SSH_HOST "cat /etc/systemd/system/4d-humans-api.service"
+
+# 检查 Python 环境
+ssh $SSH_HOST "which python"
+ssh $SSH_HOST "python --version"
 ```
 
