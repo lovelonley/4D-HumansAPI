@@ -26,30 +26,81 @@ class FileHandler:
         Returns:
             (file_path, file_size)
         """
-        file_ext = Path(file.filename).suffix.lower()
+        # P1修复: 文件名安全性验证
+        import re
+        filename = file.filename or ""
+        # 验证文件名格式（只允许字母、数字、点、下划线、连字符）
+        if not re.match(r'^[a-zA-Z0-9._-]+$', filename):
+            raise ValueError(f"Invalid filename format: {filename}")
+        
+        file_ext = Path(filename).suffix.lower()
         file_path = Path(settings.UPLOAD_DIR) / f"{task_id}{file_ext}"
         
         try:
-            # 读取文件内容
-            content = await file.read()
-            file_size = len(content)
+            # P0修复: 流式读取文件，防止大文件导致内存溢出
+            # P1修复: 使用配置中的块大小
+            file_size = 0
+            chunk_size = settings.FILE_UPLOAD_CHUNK_SIZE
             
-            # 检查磁盘空间（需要至少是文件大小的 3 倍，考虑中间文件）
+            # 确保目录存在
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # P1修复: 改进磁盘空间检查，减少竞态条件
+            # 先检查磁盘空间（基于文件大小限制估算）
             stat = shutil.disk_usage(settings.UPLOAD_DIR)
-            required_space = file_size * 3
+            estimated_required_space = settings.MAX_FILE_SIZE * settings.DISK_SPACE_MULTIPLIER
+            available_space = stat.free
+            
+            if available_space < estimated_required_space:
+                required_mb = estimated_required_space / (1024 * 1024)
+                available_mb = available_space / (1024 * 1024)
+                raise IOError(
+                    f"磁盘空间不足。需要至少: {required_mb:.2f}MB, "
+                    f"可用: {available_mb:.2f}MB"
+                )
+            
+            # 流式读取并写入文件
+            with open(file_path, "wb") as f:
+                while True:
+                    chunk = await file.read(chunk_size)
+                    if not chunk:
+                        break
+                    
+                    # P1修复: 写入前再次检查磁盘空间（减少竞态条件）
+                    stat = shutil.disk_usage(settings.UPLOAD_DIR)
+                    if stat.free < chunk_size:
+                        f.close()
+                        file_path.unlink()
+                        raise IOError("磁盘空间不足，写入过程中空间耗尽")
+                    
+                    f.write(chunk)
+                    file_size += len(chunk)
+                    
+                    # 检查文件大小限制
+                    if file_size > settings.MAX_FILE_SIZE:
+                        # 删除已写入的文件
+                        f.close()
+                        file_path.unlink()
+                        raise IOError(
+                            f"文件过大: {file_size / (1024*1024):.2f}MB "
+                            f"(最大: {settings.MAX_FILE_SIZE / (1024*1024):.2f}MB)"
+                        )
+            
+            # P1修复: 写入后最终检查磁盘空间（基于实际文件大小）
+            stat = shutil.disk_usage(settings.UPLOAD_DIR)
+            required_space = file_size * settings.DISK_SPACE_MULTIPLIER
             available_space = stat.free
             
             if available_space < required_space:
                 required_mb = required_space / (1024 * 1024)
                 available_mb = available_space / (1024 * 1024)
+                # 删除已写入的文件
+                if file_path.exists():
+                    file_path.unlink()
                 raise IOError(
                     f"磁盘空间不足。需要: {required_mb:.2f}MB, "
                     f"可用: {available_mb:.2f}MB"
                 )
-            
-            # 写入文件
-            with open(file_path, "wb") as f:
-                f.write(content)
             
             logger.info(f"Saved upload file: {file_path} ({file_size} bytes)")
             return str(file_path), file_size

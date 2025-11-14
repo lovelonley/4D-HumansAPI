@@ -86,14 +86,17 @@ class GPUMonitor:
         if not stats:
             return False
         
-        # 检查显存是否充足（至少需要 8GB 空闲）
-        if stats["memory_free"] < 8192:  # 8GB = 8192MB
-            logger.warning(f"GPU memory low: {stats['memory_free']}MB free")
+        # P1修复: 使用配置中的阈值
+        from ..config import settings
+        
+        # 检查显存是否充足
+        if stats["memory_free"] < settings.GPU_MIN_FREE_MEMORY_MB:
+            logger.warning(f"GPU memory low: {stats['memory_free']}MB free (min: {settings.GPU_MIN_FREE_MEMORY_MB}MB)")
             return False
         
-        # 检查温度是否正常（< 85°C）
-        if stats["temperature"] > 85:
-            logger.warning(f"GPU temperature high: {stats['temperature']}°C")
+        # 检查温度是否正常
+        if stats["temperature"] > settings.GPU_MAX_TEMPERATURE:
+            logger.warning(f"GPU temperature high: {stats['temperature']}°C (max: {settings.GPU_MAX_TEMPERATURE}°C)")
             return False
         
         return True

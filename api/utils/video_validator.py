@@ -27,6 +27,8 @@ class VideoValidator:
                 "duration": float,  # 秒
             }
         """
+        # P0修复: 确保 VideoCapture 资源正确释放
+        cap = None
         try:
             # 打开视频
             cap = cv2.VideoCapture(video_path)
@@ -54,8 +56,6 @@ class VideoValidator:
                 "duration": duration,
             }
             
-            cap.release()
-            
             # 验证分辨率
             max_resolution = max(width, height)
             if max_resolution > settings.MAX_VIDEO_RESOLUTION:
@@ -71,9 +71,9 @@ class VideoValidator:
                     f"(最大: {settings.MAX_VIDEO_DURATION}秒)"
                 ), video_info
             
-            # 验证帧数（至少需要 10 帧）
-            if frame_count < 10:
-                return False, f"视频帧数过少: {frame_count}帧（至少需要 10 帧）", video_info
+            # P1修复: 使用配置中的最小帧数
+            if frame_count < settings.MIN_VIDEO_FRAMES:
+                return False, f"视频帧数过少: {frame_count}帧（至少需要 {settings.MIN_VIDEO_FRAMES} 帧）", video_info
             
             logger.info(
                 f"Video validated: {width}x{height}, {fps:.2f}fps, "
@@ -85,6 +85,10 @@ class VideoValidator:
         except Exception as e:
             logger.error(f"Failed to validate video: {e}")
             return False, f"视频验证失败: {str(e)}", None
+        finally:
+            # P0修复: 确保 VideoCapture 资源释放
+            if cap is not None:
+                cap.release()
     
     @staticmethod
     def get_video_thumbnail(video_path: str, output_path: str, frame_index: int = 0) -> bool:
@@ -99,6 +103,8 @@ class VideoValidator:
         Returns:
             是否成功
         """
+        # P0修复: 确保 VideoCapture 资源正确释放
+        cap = None
         try:
             cap = cv2.VideoCapture(video_path)
             
@@ -110,7 +116,6 @@ class VideoValidator:
             
             # 读取帧
             ret, frame = cap.read()
-            cap.release()
             
             if not ret:
                 return False
@@ -124,4 +129,8 @@ class VideoValidator:
         except Exception as e:
             logger.error(f"Failed to extract thumbnail: {e}")
             return False
+        finally:
+            # P0修复: 确保 VideoCapture 资源释放
+            if cap is not None:
+                cap.release()
 

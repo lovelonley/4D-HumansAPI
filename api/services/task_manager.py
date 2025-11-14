@@ -1,5 +1,6 @@
 """任务管理系统"""
 import uuid
+import threading
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from collections import deque
@@ -19,6 +20,9 @@ class TaskManager:
         self.current_task_id: Optional[str] = None
         self.start_time = datetime.now()
         
+        # P0修复: 添加线程锁，保护并发访问
+        self.lock = threading.Lock()
+        
         # 统计信息
         self.total_tasks = 0
         self.completed_tasks = 0
@@ -31,24 +35,26 @@ class TaskManager:
         params: Optional[TaskCreate] = None
     ) -> Task:
         """创建新任务"""
-        task_id = str(uuid.uuid4())
-        
-        task = Task(
-            task_id=task_id,
-            status=TaskStatus.QUEUED,
-            progress=0,
-            video_path=video_path,
-            video_info=video_info,
-            params=params,
-            created_at=datetime.now()
-        )
-        
-        self.tasks[task_id] = task
-        self.queue.append(task_id)
-        self.total_tasks += 1
-        
-        logger.info(f"Created task {task_id}")
-        return task
+        # P0修复: 使用锁保护并发创建任务
+        with self.lock:
+            task_id = str(uuid.uuid4())
+            
+            task = Task(
+                task_id=task_id,
+                status=TaskStatus.QUEUED,
+                progress=0,
+                video_path=video_path,
+                video_info=video_info,
+                params=params,
+                created_at=datetime.now()
+            )
+            
+            self.tasks[task_id] = task
+            self.queue.append(task_id)
+            self.total_tasks += 1
+            
+            logger.info(f"Created task {task_id}")
+            return task
     
     def get_task(self, task_id: str) -> Optional[Task]:
         """获取任务"""
@@ -56,34 +62,45 @@ class TaskManager:
     
     def get_queue_position(self, task_id: str) -> Optional[int]:
         """获取任务在队列中的位置"""
-        try:
-            return list(self.queue).index(task_id) + 1
-        except ValueError:
-            return None
+        # P1修复: 使用 enumerate 避免转换为 list，提高效率
+        with self.lock:
+            try:
+                for idx, q_task_id in enumerate(self.queue, start=1):
+                    if q_task_id == task_id:
+                        return idx
+                return None
+            except ValueError:
+                return None
     
     def is_queue_full(self) -> bool:
         """检查队列是否已满"""
-        return len(self.queue) >= settings.MAX_QUEUE_SIZE
+        # P0修复: 使用锁保护读取操作
+        with self.lock:
+            return len(self.queue) >= settings.MAX_QUEUE_SIZE
     
     def has_processing_task(self) -> bool:
         """是否有正在处理的任务"""
-        return self.current_task_id is not None
+        # P0修复: 使用锁保护读取操作
+        with self.lock:
+            return self.current_task_id is not None
     
     def get_next_task(self) -> Optional[Task]:
         """获取下一个待处理任务"""
-        if not self.queue or self.current_task_id:
-            return None
-        
-        task_id = self.queue.popleft()
-        task = self.tasks.get(task_id)
-        
-        if task:
-            self.current_task_id = task_id
-            task.status = TaskStatus.PROCESSING
-            task.started_at = datetime.now()
-            logger.info(f"Started processing task {task_id}")
-        
-        return task
+        # P0修复: 使用锁保护，确保原子操作
+        with self.lock:
+            if not self.queue or self.current_task_id:
+                return None
+            
+            task_id = self.queue.popleft()
+            task = self.tasks.get(task_id)
+            
+            if task:
+                self.current_task_id = task_id
+                task.status = TaskStatus.PROCESSING
+                task.started_at = datetime.now()
+                logger.info(f"Started processing task {task_id}")
+            
+            return task
     
     def update_task_step(
         self,
@@ -92,14 +109,16 @@ class TaskManager:
         progress: int
     ):
         """更新任务步骤"""
-        task = self.get_task(task_id)
-        if not task:
-            return
-        
-        task.current_step = step
-        task.progress = progress
-        
-        logger.debug(f"Task {task_id} - Step: {step}, Progress: {progress}%")
+        # P0修复: 使用锁保护任务状态更新
+        with self.lock:
+            task = self.tasks.get(task_id)
+            if not task:
+                return
+            
+            task.current_step = step
+            task.progress = progress
+            
+            logger.debug(f"Task {task_id} - Step: {step}, Progress: {progress}%")
     
     def complete_task(
         self,
@@ -110,26 +129,28 @@ class TaskManager:
         smoothed_npz: Optional[str] = None
     ):
         """完成任务"""
-        task = self.get_task(task_id)
-        if not task:
-            return
-        
-        task.status = TaskStatus.COMPLETED
-        task.completed_at = datetime.now()
-        task.fbx_path = fbx_path
-        task.tracking_pkl = tracking_pkl
-        task.extracted_npz = extracted_npz
-        task.smoothed_npz = smoothed_npz
-        task.progress = 100
-        
-        # 计算处理时间
-        if task.started_at:
-            task.processing_time = (task.completed_at - task.started_at).total_seconds()
-        
-        self.current_task_id = None
-        self.completed_tasks += 1
-        
-        logger.info(f"Completed task {task_id} in {task.processing_time:.2f}s")
+        # P0修复: 使用锁保护任务完成操作
+        with self.lock:
+            task = self.tasks.get(task_id)
+            if not task:
+                return
+            
+            task.status = TaskStatus.COMPLETED
+            task.completed_at = datetime.now()
+            task.fbx_path = fbx_path
+            task.tracking_pkl = tracking_pkl
+            task.extracted_npz = extracted_npz
+            task.smoothed_npz = smoothed_npz
+            task.progress = 100
+            
+            # 计算处理时间
+            if task.started_at:
+                task.processing_time = (task.completed_at - task.started_at).total_seconds()
+            
+            self.current_task_id = None
+            self.completed_tasks += 1
+            
+            logger.info(f"Completed task {task_id} in {task.processing_time:.2f}s")
     
     def fail_task(
         self,
@@ -139,24 +160,26 @@ class TaskManager:
         error_details: Optional[str] = None
     ):
         """任务失败"""
-        task = self.get_task(task_id)
-        if not task:
-            return
-        
-        task.status = TaskStatus.FAILED
-        task.completed_at = datetime.now()
-        task.error_message = error_message
-        task.error_code = error_code
-        task.error_details = error_details
-        
-        # 计算处理时间
-        if task.started_at:
-            task.processing_time = (task.completed_at - task.started_at).total_seconds()
-        
-        self.current_task_id = None
-        self.failed_tasks += 1
-        
-        logger.error(f"Failed task {task_id}: {error_message}")
+        # P0修复: 使用锁保护任务失败操作
+        with self.lock:
+            task = self.tasks.get(task_id)
+            if not task:
+                return
+            
+            task.status = TaskStatus.FAILED
+            task.completed_at = datetime.now()
+            task.error_message = error_message
+            task.error_code = error_code
+            task.error_details = error_details
+            
+            # 计算处理时间
+            if task.started_at:
+                task.processing_time = (task.completed_at - task.started_at).total_seconds()
+            
+            self.current_task_id = None
+            self.failed_tasks += 1
+            
+            logger.error(f"Failed task {task_id}: {error_message}")
     
     def delete_task(self, task_id: str, keep_intermediate: bool = False) -> bool:
         """删除任务"""

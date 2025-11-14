@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     # 队列配置
     MAX_QUEUE_SIZE: int = 10
     
+    # P1修复: 请求频率限制配置
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_PER_MINUTE: int = 10  # 每分钟最多 10 个请求
+    RATE_LIMIT_PER_HOUR: int = 100  # 每小时最多 100 个请求
+    
     # ============================================================
     # 超时配置（秒）
     # ============================================================
@@ -85,6 +90,23 @@ class Settings(BaseSettings):
     DEFAULT_FPS: int = 30
     DEFAULT_WITH_ROOT_MOTION: bool = True
     DEFAULT_CAM_SCALE: float = 1.0
+    
+    # ============================================================
+    # P1修复: 硬编码值提取到配置
+    # ============================================================
+    # GPU 监控配置
+    GPU_MIN_FREE_MEMORY_MB: int = 8192  # 8GB
+    GPU_MAX_TEMPERATURE: int = 85  # 摄氏度
+    
+    # 视频验证配置
+    MIN_VIDEO_FRAMES: int = 10  # 最小帧数
+    
+    # 文件处理配置
+    DISK_SPACE_MULTIPLIER: int = 3  # 磁盘空间倍数（文件大小 * 倍数）
+    FILE_UPLOAD_CHUNK_SIZE: int = 8192  # 文件上传块大小（8KB）
+    
+    # 进程终止配置
+    PROCESS_KILL_TIMEOUT: int = 5  # 进程终止等待超时（秒）
     
     class Config:
         env_file = ".env"

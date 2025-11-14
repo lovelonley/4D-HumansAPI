@@ -49,6 +49,12 @@ class Worker:
     
     async def _process_loop(self):
         """处理循环"""
+        # P1修复: Worker 错误恢复机制 - 添加错误计数和退避策略
+        error_count = 0
+        max_errors = 10  # 最大连续错误次数
+        base_delay = 1  # 基础延迟（秒）
+        max_delay = 60  # 最大延迟（秒）
+        
         while self.running:
             try:
                 # 获取下一个任务
@@ -57,6 +63,8 @@ class Worker:
                 if task:
                     # 处理任务
                     await self._process_task(task.task_id)
+                    # 任务成功，重置错误计数
+                    error_count = 0
                 else:
                     # 没有任务，等待
                     await asyncio.sleep(1)
@@ -64,8 +72,18 @@ class Worker:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Worker error: {e}", exc_info=True)
-                await asyncio.sleep(5)
+                error_count += 1
+                logger.error(f"Worker error ({error_count}/{max_errors}): {e}", exc_info=True)
+                
+                # P1修复: 指数退避策略
+                if error_count >= max_errors:
+                    logger.critical(f"Worker stopped due to too many errors ({max_errors})")
+                    self.running = False
+                    break
+                
+                # 指数退避：1s, 2s, 4s, 8s, ..., 最大 60s
+                delay = min(base_delay * (2 ** (error_count - 1)), max_delay)
+                await asyncio.sleep(delay)
     
     async def _process_task(self, task_id: str):
         """
@@ -97,15 +115,15 @@ class Worker:
                 
                 self.task_manager.update_task_step(task_id, step, progress)
             
-            # 获取参数
-            params = task.params or {}
+            # P1修复: 提取参数（消除代码重复）
+            params = task.params
             track_id = params.track_id if params else None
-            fps = params.fps if params and params.fps else settings.DEFAULT_FPS
+            fps = params.fps if params and params.fps is not None else settings.DEFAULT_FPS
             with_root_motion = params.with_root_motion if params and params.with_root_motion is not None else settings.DEFAULT_WITH_ROOT_MOTION
-            cam_scale = params.cam_scale if params and params.cam_scale else settings.DEFAULT_CAM_SCALE
-            smoothing_strength = params.smoothing_strength if params and params.smoothing_strength else settings.DEFAULT_SMOOTHING_STRENGTH
-            smoothing_window = params.smoothing_window if params and params.smoothing_window else settings.DEFAULT_SMOOTHING_WINDOW
-            smoothing_ema = params.smoothing_ema if params and params.smoothing_ema else settings.DEFAULT_SMOOTHING_EMA
+            cam_scale = params.cam_scale if params and params.cam_scale is not None else settings.DEFAULT_CAM_SCALE
+            smoothing_strength = params.smoothing_strength if params and params.smoothing_strength is not None else settings.DEFAULT_SMOOTHING_STRENGTH
+            smoothing_window = params.smoothing_window if params and params.smoothing_window is not None else settings.DEFAULT_SMOOTHING_WINDOW
+            smoothing_ema = params.smoothing_ema if params and params.smoothing_ema is not None else settings.DEFAULT_SMOOTHING_EMA
             
             # 运行 Pipeline（在线程池中运行，避免阻塞事件循环）
             loop = asyncio.get_event_loop()

@@ -224,7 +224,7 @@ api/
 ## 🐛 已知限制
 
 1. **单队列**: 一次只能处理一个任务，适合单 GPU 环境
-2. **无认证**: 生产环境建议添加 API Key 或 OAuth（见 [PROJECT_OPTIMIZATION_ROADMAP.md](PROJECT_OPTIMIZATION_ROADMAP.md)）
+2. **无认证**: 生产环境建议添加 API Key 或 OAuth
 3. **无重试**: 任务失败需要手动重新提交
 4. **本地存储**: 文件存储在本地，不支持分布式
 5. **CORS 配置**: 当前允许所有域名访问（生产环境应限制）

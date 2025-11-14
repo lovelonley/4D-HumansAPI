@@ -7,13 +7,13 @@ from pydantic import BaseModel, Field
 class TaskCreate(BaseModel):
     """创建任务请求"""
     # 可选参数
-    track_id: Optional[int] = Field(None, description="指定提取的人物ID（默认自动选择最长轨迹）")
-    fps: Optional[int] = Field(None, description="输出FPS（默认30）")
+    track_id: Optional[int] = Field(None, ge=0, description="指定提取的人物ID（默认自动选择最长轨迹）")
+    fps: Optional[int] = Field(None, ge=1, le=120, description="输出FPS（1-120，默认30）")
     with_root_motion: Optional[bool] = Field(None, description="是否包含根运动（默认True）")
-    cam_scale: Optional[float] = Field(None, description="相机缩放（默认1.0）")
-    smoothing_strength: Optional[float] = Field(None, description="平滑强度（默认1.0）")
-    smoothing_window: Optional[int] = Field(None, description="平滑窗口大小（默认9）")
-    smoothing_ema: Optional[float] = Field(None, description="相机EMA平滑系数（默认0.2）")
+    cam_scale: Optional[float] = Field(None, gt=0.0, le=10.0, description="相机缩放（0.0-10.0，默认1.0）")
+    smoothing_strength: Optional[float] = Field(None, ge=0.0, le=2.0, description="平滑强度（0.0-2.0，默认1.0）")
+    smoothing_window: Optional[int] = Field(None, ge=3, le=21, description="平滑窗口大小（3-21，默认9）")
+    smoothing_ema: Optional[float] = Field(None, ge=0.0, le=1.0, description="相机EMA平滑系数（0.0-1.0，默认0.2）")
 
 
 class Task(BaseModel):

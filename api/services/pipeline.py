@@ -133,9 +133,10 @@ class FourDHumansPipeline:
             # P0修复: 强制终止超时的子进程，防止资源泄露
             if e.process:
                 try:
+                    # P1修复: 使用配置中的超时时间
                     logger.warning(f"[{step_name}] Killing timed out process (PID: {e.process.pid})")
                     e.process.kill()
-                    e.process.wait(timeout=5)  # 等待进程完全退出
+                    e.process.wait(timeout=settings.PROCESS_KILL_TIMEOUT)  # 等待进程完全退出
                     logger.info(f"[{step_name}] Process terminated successfully")
                 except Exception as kill_error:
                     logger.error(f"[{step_name}] Failed to kill process: {kill_error}")
@@ -146,9 +147,32 @@ class FourDHumansPipeline:
                 error_code=ErrorCode.TASK_TIMEOUT,
                 duration=duration
             )
-        except Exception as e:
+        except (OSError, IOError) as e:
+            # P1修复: 区分文件系统错误
             duration = time.time() - start_time
-            logger.error(f"[{step_name}] Exception: {str(e)}")
+            logger.error(f"[{step_name}] File system error: {str(e)}")
+            
+            return PipelineResult(
+                success=False,
+                error=str(e),
+                error_code=ErrorCode.DISK_FULL if "space" in str(e).lower() or "disk" in str(e).lower() else ErrorCode.INTERNAL_ERROR,
+                duration=duration
+            )
+        except ValueError as e:
+            # P1修复: 区分参数错误
+            duration = time.time() - start_time
+            logger.error(f"[{step_name}] Value error: {str(e)}")
+            
+            return PipelineResult(
+                success=False,
+                error=str(e),
+                error_code=ErrorCode.INVALID_REQUEST,
+                duration=duration
+            )
+        except Exception as e:
+            # 其他未知异常
+            duration = time.time() - start_time
+            logger.error(f"[{step_name}] Unexpected exception: {str(e)}", exc_info=True)
             
             return PipelineResult(
                 success=False,
@@ -181,6 +205,35 @@ class FourDHumansPipeline:
         
         return ErrorCode.INTERNAL_ERROR
     
+    def _validate_path(self, file_path: str, allowed_dir: Path) -> bool:
+        """
+        P0修复: 验证文件路径是否在允许的目录内（兼容 Python 3.8+）
+        
+        Args:
+            file_path: 文件路径
+            allowed_dir: 允许的目录
+            
+        Returns:
+            是否在允许的目录内
+        """
+        try:
+            resolved = Path(file_path).resolve()
+            allowed = allowed_dir.resolve()
+            
+            # P0修复: 兼容 Python 3.8 和 3.9+
+            if hasattr(resolved, 'is_relative_to'):
+                # Python 3.9+ 使用 is_relative_to
+                return resolved.is_relative_to(allowed)
+            else:
+                # Python 3.8 兼容方案：使用 relative_to
+                try:
+                    resolved.relative_to(allowed)
+                    return True
+                except ValueError:
+                    return False
+        except (ValueError, AttributeError):
+            return False
+    
     def run_tracking(
         self,
         video_path: str,
@@ -200,6 +253,15 @@ class FourDHumansPipeline:
         """
         if progress_callback:
             progress_callback(10)
+        
+        # P1修复: 验证视频路径安全性
+        if not self._validate_path(video_path, settings.UPLOAD_DIR):
+            return PipelineResult(
+                success=False,
+                error=f"Invalid video path: {video_path}",
+                error_code=ErrorCode.INVALID_REQUEST,
+                duration=0.0
+            )
         
         # 从视频路径提取文件名（PHALP 会自动使用视频文件名作为输出）
         video_name = Path(video_path).stem
@@ -227,19 +289,30 @@ class FourDHumansPipeline:
         )
         
         if result.success:
-            # 验证 PHALP 输出文件
+            # P1修复: 验证 PHALP 输出文件（TOCTOU 保护）
+            # 先检查文件是否存在，然后立即使用
             if phalp_output_pkl.exists():
                 # 重命名为使用 task_id 的文件名（统一命名规范）
                 try:
+                    # P1修复: 在使用文件前再次检查存在性（TOCTOU 保护）
+                    if not phalp_output_pkl.exists():
+                        raise FileNotFoundError(f"File disappeared: {phalp_output_pkl}")
                     shutil.move(str(phalp_output_pkl), str(output_pkl))
                     logger.info(f"Renamed tracking output: {phalp_output_pkl.name} -> {output_pkl.name}")
-                except Exception as e:
+                except (OSError, IOError, shutil.Error, FileNotFoundError) as e:
+                    # P1修复: 区分文件操作错误
                     logger.warning(f"Failed to rename tracking file, using original: {e}")
                     output_pkl = phalp_output_pkl
                 
-                result.output_path = str(output_pkl)
-                if progress_callback:
-                    progress_callback(30)
+                # P1修复: 验证输出文件确实存在
+                if output_pkl.exists():
+                    result.output_path = str(output_pkl)
+                    if progress_callback:
+                        progress_callback(30)
+                else:
+                    result.success = False
+                    result.error = f"Output file not found: {output_pkl}"
+                    result.error_code = ErrorCode.TRACKING_FAILED
             else:
                 result.success = False
                 result.error = f"Tracking output file not found: {phalp_output_pkl}"
@@ -301,10 +374,17 @@ class FourDHumansPipeline:
         )
         
         if result.success:
+            # P1修复: TOCTOU 保护 - 验证文件存在
             if output_npz.exists():
-                result.output_path = str(output_npz)
-                if progress_callback:
-                    progress_callback(45)
+                # P1修复: 再次检查文件确实存在（TOCTOU 保护）
+                if not output_npz.exists():
+                    result.success = False
+                    result.error = f"Output file disappeared: {output_npz}"
+                    result.error_code = ErrorCode.TRACK_EXTRACTION_FAILED
+                else:
+                    result.output_path = str(output_npz)
+                    if progress_callback:
+                        progress_callback(45)
             else:
                 result.success = False
                 result.error = f"Extraction output file not found: {output_npz}"
@@ -364,10 +444,17 @@ class FourDHumansPipeline:
         )
         
         if result.success:
+            # P1修复: TOCTOU 保护 - 验证文件存在
             if output_npz.exists():
-                result.output_path = str(output_npz)
-                if progress_callback:
-                    progress_callback(70)
+                # P1修复: 再次检查文件确实存在（TOCTOU 保护）
+                if not output_npz.exists():
+                    result.success = False
+                    result.error = f"Output file disappeared: {output_npz}"
+                    result.error_code = ErrorCode.SMOOTHING_FAILED
+                else:
+                    result.output_path = str(output_npz)
+                    if progress_callback:
+                        progress_callback(70)
             else:
                 result.success = False
                 result.error = f"Smoothing output file not found: {output_npz}"
@@ -429,24 +516,31 @@ class FourDHumansPipeline:
         )
         
         if result.success:
+            # P1修复: TOCTOU 保护 - 验证文件存在
             if output_fbx.exists():
-                # Remove mesh from FBX to reduce file size
-                mesh_removal_result = self._remove_mesh_from_fbx(
-                    output_fbx, 
-                    task_id, 
-                    progress_callback
-                )
-                
-                if mesh_removal_result.success:
-                    result.output_path = mesh_removal_result.output_path
-                    if progress_callback:
-                        progress_callback(95)
+                # P1修复: 再次检查文件确实存在（TOCTOU 保护）
+                if not output_fbx.exists():
+                    result.success = False
+                    result.error = f"Output file disappeared: {output_fbx}"
+                    result.error_code = ErrorCode.FBX_EXPORT_FAILED
                 else:
-                    # Mesh removal failed, but keep original FBX
-                    logger.warning(f"Mesh removal failed, using original FBX: {mesh_removal_result.error}")
-                    result.output_path = str(output_fbx)
-                    if progress_callback:
-                        progress_callback(95)
+                    # Remove mesh from FBX to reduce file size
+                    mesh_removal_result = self._remove_mesh_from_fbx(
+                        output_fbx, 
+                        task_id, 
+                        progress_callback
+                    )
+                    
+                    if mesh_removal_result.success:
+                        result.output_path = mesh_removal_result.output_path
+                        if progress_callback:
+                            progress_callback(95)
+                    else:
+                        # Mesh removal failed, but keep original FBX
+                        logger.warning(f"Mesh removal failed, using original FBX: {mesh_removal_result.error}")
+                        result.output_path = str(output_fbx)
+                        if progress_callback:
+                            progress_callback(95)
             else:
                 result.success = False
                 result.error = f"FBX output file not found: {output_fbx}"
@@ -560,6 +654,7 @@ class FourDHumansPipeline:
             # 步骤 1: 追踪
             result = self.run_tracking(video_path, task_id, progress_callback)
             if not result.success:
+                self._cleanup_generated_files(generated_files)
                 return {
                     "success": False,
                     "error": result.error,
@@ -567,7 +662,17 @@ class FourDHumansPipeline:
                     "error_step": ProcessStep.TRACKING,
                     "total_duration": time.time() - total_start
                 }
+            # P1修复: 验证文件存在（错误恢复）
             tracking_pkl = result.output_path
+            if not tracking_pkl or not Path(tracking_pkl).exists():
+                self._cleanup_generated_files(generated_files)
+                return {
+                    "success": False,
+                    "error": f"Tracking output file not found: {tracking_pkl}",
+                    "error_code": ErrorCode.TRACKING_FAILED,
+                    "error_step": ProcessStep.TRACKING,
+                    "total_duration": time.time() - total_start
+                }
             generated_files.append(tracking_pkl)
             
             # 步骤 2: 提取
@@ -582,7 +687,17 @@ class FourDHumansPipeline:
                     "error_step": ProcessStep.TRACK_EXTRACTION,
                     "total_duration": time.time() - total_start
                 }
+            # P1修复: 验证文件存在（错误恢复）
             extracted_npz = result.output_path
+            if not extracted_npz or not Path(extracted_npz).exists():
+                self._cleanup_generated_files(generated_files)
+                return {
+                    "success": False,
+                    "error": f"Extraction output file not found: {extracted_npz}",
+                    "error_code": ErrorCode.TRACK_EXTRACTION_FAILED,
+                    "error_step": ProcessStep.TRACK_EXTRACTION,
+                    "total_duration": time.time() - total_start
+                }
             generated_files.append(extracted_npz)
             
             # 步骤 3: 平滑
@@ -601,7 +716,17 @@ class FourDHumansPipeline:
                     "error_step": ProcessStep.SMOOTHING,
                     "total_duration": time.time() - total_start
                 }
+            # P1修复: 验证文件存在（错误恢复）
             smoothed_npz = result.output_path
+            if not smoothed_npz or not Path(smoothed_npz).exists():
+                self._cleanup_generated_files(generated_files)
+                return {
+                    "success": False,
+                    "error": f"Smoothing output file not found: {smoothed_npz}",
+                    "error_code": ErrorCode.SMOOTHING_FAILED,
+                    "error_step": ProcessStep.SMOOTHING,
+                    "total_duration": time.time() - total_start
+                }
             generated_files.append(smoothed_npz)
             
             # 步骤 4: 导出 FBX
@@ -620,7 +745,17 @@ class FourDHumansPipeline:
                     "error_step": ProcessStep.FBX_EXPORT,
                     "total_duration": time.time() - total_start
                 }
+            # P1修复: 验证文件存在（错误恢复）
             fbx_path = result.output_path
+            if not fbx_path or not Path(fbx_path).exists():
+                self._cleanup_generated_files(generated_files)
+                return {
+                    "success": False,
+                    "error": f"FBX output file not found: {fbx_path}",
+                    "error_code": ErrorCode.FBX_EXPORT_FAILED,
+                    "error_step": ProcessStep.FBX_EXPORT,
+                    "total_duration": time.time() - total_start
+                }
             
             if progress_callback:
                 progress_callback(100)
@@ -637,9 +772,19 @@ class FourDHumansPipeline:
                 "total_duration": total_duration
             }
         
+        except (OSError, IOError) as e:
+            # P1修复: 区分文件系统错误
+            logger.error(f"Pipeline file system error: {e}", exc_info=True)
+            self._cleanup_generated_files(generated_files)
+            raise
+        except ValueError as e:
+            # P1修复: 区分参数错误
+            logger.error(f"Pipeline value error: {e}", exc_info=True)
+            self._cleanup_generated_files(generated_files)
+            raise
         except Exception as e:
             # P0修复: 异常时清理已生成的文件
-            logger.error(f"Pipeline exception: {e}", exc_info=True)
+            logger.error(f"Pipeline unexpected exception: {e}", exc_info=True)
             self._cleanup_generated_files(generated_files)
             raise
     
@@ -657,7 +802,8 @@ class FourDHumansPipeline:
                 try:
                     FileHandler.delete_file(file_path)
                     logger.info(f"Cleaned up generated file: {file_path}")
-                except Exception as e:
+                except (OSError, IOError) as e:
+                    # P1修复: 区分文件操作错误
                     logger.error(f"Failed to cleanup file {file_path}: {e}")
     
     def _get_longest_track_id(self, tracking_pkl: str) -> Optional[int]:
@@ -694,6 +840,14 @@ class FourDHumansPipeline:
             
             return longest_tid
             
+        except (FileNotFoundError, IOError) as e:
+            # P1修复: 区分文件读取错误
+            logger.error(f"Failed to read tracking file: {e}")
+            return None
+        except (KeyError, AttributeError, TypeError) as e:
+            # P1修复: 区分数据格式错误
+            logger.error(f"Invalid tracking data format: {e}")
+            return None
         except Exception as e:
             logger.error(f"Failed to get longest track ID: {e}")
             return None

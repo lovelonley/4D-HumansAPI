@@ -32,6 +32,7 @@ router = APIRouter(
     description="上传视频文件，创建动作捕捉任务。任务将自动排队处理。"
 )
 async def create_mocap_task(
+    request: Request,
     video: UploadFile = File(..., description="视频文件"),
     track_id: Optional[int] = Form(None, description="指定提取的人物ID（默认自动选择最长轨迹）"),
     fps: Optional[int] = Form(None, description="输出FPS（默认30）"),
@@ -42,6 +43,16 @@ async def create_mocap_task(
     smoothing_ema: Optional[float] = Form(None, description="相机EMA平滑系数（默认0.2）")
 ):
     """创建动作捕捉任务"""
+    # P1修复: 请求频率限制
+    client_id = request.client.host if request.client else "unknown"
+    if not _check_rate_limit(client_id):
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error_code": "RATE_LIMIT_EXCEEDED",
+                "error_message": f"请求过于频繁，请稍后再试（限制：{settings.RATE_LIMIT_PER_MINUTE}次/分钟，{settings.RATE_LIMIT_PER_HOUR}次/小时）"
+            }
+        )
     task_manager = get_task_manager()
     
     # 检查队列是否已满
@@ -151,15 +162,41 @@ async def create_mocap_task(
     
     except HTTPException:
         raise
+    except (OSError, IOError) as e:
+        # P1修复: 区分文件系统错误
+        task_manager.delete_task(task.task_id)
+        if 'video_path' in locals() and Path(video_path).exists():
+            FileHandler.delete_file(video_path)
+            logger.info(f"Deleted video file after file system error: {video_path}")
+        logger.error(f"File system error while creating task: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error_code": ErrorCode.DISK_FULL if "space" in str(e).lower() or "disk" in str(e).lower() else ErrorCode.INTERNAL_ERROR,
+                "error_message": f"创建任务失败: {str(e)}"
+            }
+        )
+    except ValueError as e:
+        # P1修复: 区分参数错误
+        task_manager.delete_task(task.task_id)
+        if 'video_path' in locals() and Path(video_path).exists():
+            FileHandler.delete_file(video_path)
+            logger.info(f"Deleted video file after validation error: {video_path}")
+        logger.error(f"Validation error while creating task: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error_code": ErrorCode.INVALID_REQUEST,
+                "error_message": f"参数验证失败: {str(e)}"
+            }
+        )
     except Exception as e:
         # P0修复: 确保删除失败任务的视频文件
-        # 删除任务
         task_manager.delete_task(task.task_id)
-        # 确保删除视频文件（如果已保存）
         if 'video_path' in locals() and Path(video_path).exists():
             FileHandler.delete_file(video_path)
             logger.info(f"Deleted video file after exception: {video_path}")
-        logger.error(f"Failed to create task: {e}")
+        logger.error(f"Failed to create task: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail={
