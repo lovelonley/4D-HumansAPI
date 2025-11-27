@@ -188,14 +188,16 @@ def convert_to_amass_format(npz_path: str, output_path: str, gender: str, fps: i
         trans = trans_raw
         print("[convert] Motion analysis skipped (no analyzer or no camera data)")
     
-    # Get betas (default to zeros if not available)
+    # Get betas (default to tall and thin if not available)
     if 'betas' in data and data['betas'].size > 0:
         betas = data['betas']
         if betas.ndim > 1:
             betas = betas[0]  # Use first frame's betas
         betas = betas[:10]  # Use first 10 shape parameters
     else:
-        betas = np.zeros(10, dtype=np.float64)
+        # Default: tall and thin body shape
+        # Beta[0]: height (+0.6 = taller), Beta[1]: weight (-0.5 = thinner)
+        betas = np.array([0.6, -0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float64)
     
     print(f"\n[convert] Converting rotation matrices to Rodrigues vectors...")
     print(f"[convert] NOTE: Applying 180° X-rotation to root for correct orientation")
