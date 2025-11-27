@@ -347,7 +347,7 @@ def main_blender(args):
     try:
         bpy.ops.object.smplx_export_fbx(
             filepath=args.out,
-            export_shape_keys="SHAPE_POSECORRECTIVES",  # Export all blend shapes
+            export_shape_keys="NONE",  # Disable shape keys to reduce file size (~2MB vs ~70MB)
             target_format=args.target_format
         )
         print("[blender] FBX exported successfully")
