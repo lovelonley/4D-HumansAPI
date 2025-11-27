@@ -524,23 +524,30 @@ class FourDHumansPipeline:
                     result.error = f"Output file disappeared: {output_fbx}"
                     result.error_code = ErrorCode.FBX_EXPORT_FAILED
                 else:
-                    # Remove mesh from FBX to reduce file size
-                    mesh_removal_result = self._remove_mesh_from_fbx(
-                        output_fbx, 
-                        task_id, 
-                        progress_callback
-                    )
+                    # Temporarily skip mesh removal - keep original FBX with mesh
+                    # TODO: Re-enable mesh removal when needed
+                    # mesh_removal_result = self._remove_mesh_from_fbx(
+                    #     output_fbx, 
+                    #     task_id, 
+                    #     progress_callback
+                    # )
+                    # 
+                    # if mesh_removal_result.success:
+                    #     result.output_path = mesh_removal_result.output_path
+                    #     if progress_callback:
+                    #         progress_callback(95)
+                    # else:
+                    #     # Mesh removal failed, but keep original FBX
+                    #     logger.warning(f"Mesh removal failed, using original FBX: {mesh_removal_result.error}")
+                    #     result.output_path = str(output_fbx)
+                    #     if progress_callback:
+                    #         progress_callback(95)
                     
-                    if mesh_removal_result.success:
-                        result.output_path = mesh_removal_result.output_path
-                        if progress_callback:
-                            progress_callback(95)
-                    else:
-                        # Mesh removal failed, but keep original FBX
-                        logger.warning(f"Mesh removal failed, using original FBX: {mesh_removal_result.error}")
-                        result.output_path = str(output_fbx)
-                        if progress_callback:
-                            progress_callback(95)
+                    # Keep original FBX with mesh
+                    result.output_path = str(output_fbx)
+                    logger.info(f"Keeping original FBX with mesh: {output_fbx}")
+                    if progress_callback:
+                        progress_callback(95)
             else:
                 result.success = False
                 result.error = f"FBX output file not found: {output_fbx}"
